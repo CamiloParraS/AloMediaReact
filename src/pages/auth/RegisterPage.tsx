@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { Mail, Lock, User, Chrome, Github } from "lucide-react";
 import { registerRequest, ApiError } from "../../services/authService";
@@ -69,7 +69,7 @@ export default function RegisterPage() {
 
   const apiError = error instanceof ApiError ? error : null;
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (password !== confirmPassword) {
       setPasswordMismatch(true);
@@ -80,7 +80,7 @@ export default function RegisterPage() {
     setIsPending(true);
     try {
       const { user, token } = await registerRequest({ firstName, lastName, email, password });
-      login(user, token);
+      login(user);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
@@ -88,6 +88,10 @@ export default function RegisterPage() {
       setIsPending(false);
     }
   };
+  
+  const handleOAuthSignUpGoogle = () => {
+    window.location.href = import.meta.env.VITE_BASE_URL + "/oauth2/authorize/google";
+  }
 
   return (
     <div className="glass-card rounded-3xl p-8 sm:p-10 shadow-2xl shadow-black/40 animate-slide-up">
@@ -229,6 +233,7 @@ export default function RegisterPage() {
           <button
             type="button"
             className="flex items-center justify-center gap-3 w-full bg-dark-card/60 hover:bg-dark-elevated/80 border border-dark-border hover:border-dark-border-light text-accent-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm group cursor-pointer"
+            onClick={handleOAuthSignUpGoogle}
           >
             <Chrome className="w-5 h-5 text-muted group-hover:text-accent-white transition-colors" />
             Sign up with Google
