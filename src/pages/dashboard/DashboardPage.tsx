@@ -5,6 +5,9 @@ import ProjectCard from "../../components/ProjectCard";
 import PrimaryButton from "../../components/PrimaryButton";
 import ActionCard from "../../components/ActionCard";
 
+// Array of objects: each entry represents a project card (id, name, thumbnail, date).
+// Iterated with .map() in the JSX; the loop index (idx) is used to compute a
+// staggered animationDelay per card: 0.15 + idx * 0.05s.
 const SAMPLE_PROJECTS = [
   { id: "1", name: "Summer Vlog 2026", thumbnail: null, date: "Feb 25" },
   { id: "2", name: "Product Demo v2", thumbnail: null, date: "Feb 20" },
@@ -12,6 +15,8 @@ const SAMPLE_PROJECTS = [
   { id: "4", name: "Brand Intro Animation", thumbnail: null, date: "Feb 10" },
 ];
 
+// Array of objects: each entry holds the icon component, label, and description
+// for a quick-action card. Iterated with .map() to render an <ActionCard> per entry.
 const QUICK_ACTIONS = [
   { icon: Film, label: "Import Media", desc: "Upload video, audio or images" },
   { icon: Sparkles, label: "Templates", desc: "Start from a pre-made template" },
@@ -36,7 +41,7 @@ export default function DashboardPage() {
 
           {/* Hero / Create Section */}
           <section className="animate-fade-in">
-            <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-burgundy-deep via-blood-red/40 to-dark-surface border border-dark-border/50 p-8 sm:p-12">
+            <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-burgundy-deep via-blood-red/40 to-dark-surface border border-dark-border/50 p-8 sm:p-12 z-10">
               <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-blood-red/15 blur-[100px] pointer-events-none" />
               <div className="absolute bottom-0 left-0 w-60 h-60 rounded-full bg-burgundy/20 blur-[80px] pointer-events-none" />
 
