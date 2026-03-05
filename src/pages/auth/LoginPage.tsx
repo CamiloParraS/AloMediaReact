@@ -1,54 +1,10 @@
 import { useState, type SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { Mail, Lock, Chrome, Github } from "lucide-react";
-import { loginRequest, ApiError } from "../../services/authService";
+import { signIn } from "../../services/authService";
+import { ApiError } from "../../api/errors";
 import { useAuth } from "../../hooks/useAuth";
 
-/*
- * ============================================================
- *  LOGINPAGE — Página de inicio de sesión
- * ============================================================
- *
- *  ESTRUCTURA DEL LAYOUT
- *  ─────────────────────
- *  El componente está dividido en dos columnas horizontales
- *  (en pantallas medianas y grandes) dentro de un contenedor
- *  flexbox. En móvil las columnas se apilan verticalmente.
- *
- *    [ Formulario ]  |  [ OAuth ]
- *
- *  Columna izquierda — Formulario de credenciales:
- *    • Input de correo electrónico (icono Mail)
- *    • Input de contraseña (icono Lock)
- *    • Botón primario "Sign In" con degradado rojo
- *    • Links secundarios: "Forgot Password?" → /auth/recover
- *                         "Terms & Conditions" → href externo
- *
- *  Divisor central:
- *    • En desktop: línea vertical con texto "OR" centrado
- *    • En móvil:   línea horizontal con texto "OR" centrado
- *
- *  Columna derecha — OAuth:
- *    • Botón "Sign in with Google" (icono Chrome)
- *    • Botón "Sign in with GitHub" (icono Github)
- *    • Ambos con fondo oscuro translúcido y borde sutil
- *
- *  ESTILOS CLAVE
- *  ─────────────
- *  • El card exterior usa la clase utilitaria `.glass-card`
- *    definida en index.css: fondo con blur, borde suave y
- *    degradado de fondo oscuro semitransparente.
- *  • El botón principal usa `bg-linear-to-r` (Tailwind v4)
- *    con sombra de color y efecto de escala al hover/active.
- *  • Los inputs muestran el icono más brillante al enfocar
- *    gracias a `group-focus-within:text-accent-red`.
- *
- *  NAVEGACIÓN
- *  ──────────
- *  • Sin cuenta → enlace "Sign Up" al pie → /auth/register
- *  • Contraseña olvidada → /auth/recover
- * ============================================================
- */
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -65,7 +21,7 @@ export default function LoginPage() {
     setError(null);
     setIsPending(true);
     try {
-      const { user } = await loginRequest({ email, password });
+      const { user } = await signIn({ email, password });
       login(user);
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -147,7 +103,7 @@ export default function LoginPage() {
 
           <div className="flex items-center justify-between text-xs px-1">
             <Link
-              to="/auth/recover"
+              to="/auth/recover/request"
               className="text-muted hover:text-rose-muted text-bold transition-colors duration-200 underline underline-offset-2 "
             >
               Forgot Password?
@@ -168,6 +124,7 @@ export default function LoginPage() {
           <div className="flex-1 w-px bg-linear-to-b from-transparent via-dark-border to-transparent" />
         </div>
 
+        {/* This could be a conmponent to reuse in register and login */}
         {/* Column 2: OAuth */}
         <div className="flex-1 flex flex-col gap-4 justify-center order-3">
           <button

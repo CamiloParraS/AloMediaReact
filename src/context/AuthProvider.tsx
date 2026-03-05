@@ -1,15 +1,7 @@
 import { createContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { meRequest, logoutRequest, type MeResponse } from "../services/authService";
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export interface User {
-  id: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-  role: string;
-}
+import { me, signout } from "../services/authService";
+import type { MeResponse } from "../types/authTypes";
+import type { User } from "../types/userTypes";
 
 export interface AuthContextType {
   user: User | null;
@@ -21,11 +13,11 @@ export interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-// ── Context ──────────────────────────────────────────────────────────────────
+// Context
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ── Provider ─────────────────────────────────────────────────────────────────
+// Provider 
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -40,7 +32,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
     async function verify() {
       try {
-        const data: MeResponse = await meRequest();
+        const data: MeResponse = await me();
 
         if (!cancelled) {
           if (data.authenticated && data.user) {
@@ -68,7 +60,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   /** Logout: hit the backend then wipe local state. */
   const logout = useCallback(async () => {
     try {
-      await logoutRequest();
+      await signout();
     } finally {
       setUser(null);
     }

@@ -1,59 +1,10 @@
-import { useState, type FormEvent, type SyntheticEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { Mail, Lock, User, Chrome, Github } from "lucide-react";
-import { registerRequest, ApiError } from "../../services/authService";
+import { signUp } from "../../services/authService";
+import { ApiError } from "../../api/errors";
 import { useAuth } from "../../hooks/useAuth";
 
-/*
- * ============================================================
- *  REGISTERPAGE — Página de creación de cuenta
- * ============================================================
- *
- *  ESTRUCTURA DEL LAYOUT
- *  ─────────────────────
- *  Igual que LoginPage, usa dos columnas horizontales en
- *  desktop y apilado vertical en móvil:
- *
- *    [ Formulario ]  |  [ OAuth ]
- *
- *  El orden visual está controlado con clases `order-*` de
- *  Tailwind para que en todas las resoluciones el formulario
- *  quede a la izquierda y los botones OAuth a la derecha.
- *
- *  Columna izquierda — Formulario de registro (order-1):
- *    • Input de correo electrónico
- *    • Fila con dos inputs: nombre y apellido (flex gap-3)
- *    • Input de contraseña
- *    • Input de confirmar contraseña
- *    • Botón primario "Create Account" con degradado rojo
- *
- *  Divisor central (order-2):
- *    • Desktop: línea vertical + "OR"
- *    • Móvil:   línea horizontal + "OR"
- *
- *  Columna derecha — OAuth (order-3):
- *    • Botón "Sign up with Google"
- *    • Botón "Sign up with GitHub"
- *
- *  ORDEN DE LOS CAMPOS
- *  ───────────────────
- *  Los campos están pensados para un flujo de arriba a abajo:
- *    1. Email  →  identidad principal
- *    2. Nombre / Apellido  →  datos personales básicos
- *    3. Contraseña + Confirmación  →  seguridad al final
- *
- *  ESTILOS CLAVE
- *  ─────────────
- *  • Misma clase `.glass-card` del layout de autenticación.
- *  • Los inputs de nombre y apellido comparten una fila con
- *    `flex gap-3` para aprovechar el espacio horizontal.
- *  • Efecto de foco idéntico al de LoginPage.
- *
- *  NAVEGACIÓN
- *  ──────────
- *  • Ya tienes cuenta → enlace "Sign In" al pie → /auth/login
- * ============================================================
- */
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -79,7 +30,7 @@ export default function RegisterPage() {
     setError(null);
     setIsPending(true);
     try {
-      const { user, token } = await registerRequest({ firstName, lastName, email, password });
+      const { user } = await signUp({ firstName, lastName, email, password });
       login(user);
       navigate("/dashboard", { replace: true });
     } catch (err) {
