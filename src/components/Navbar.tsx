@@ -1,5 +1,9 @@
 import { useNavigate } from "react-router";
 import { Plus, User, Home } from "lucide-react";
+import { useState } from "react";
+import ActionCard from "./ActionCard";
+import UserMenuModal from "./UserMenuModal";
+import { useAuth } from "../hooks/useAuth";
 
 interface NavLink {
   icon: React.ComponentType<{ className?: string }>;
@@ -8,15 +12,25 @@ interface NavLink {
   active?: boolean;
 }
 
+// Array of NavLink objects: each entry describes a navigation item (icon, label, href, active).
+// Iterated with .map() to render <a> elements; the active flag drives
+// conditional CSS class selection inside the loop (active vs inactive styles).
 const NAV_LINKS: NavLink[] = [
   { icon: Home, label: "Home", href: "#", active: true },
 ];
 
 export default function Navbar() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  async function handleLogout() {
+    await logout();
+    navigate("/auth/login");
+  }
 
   return (
-    <header className="relative z-10 border-b border-dark-border/50">
+    <header className="relative z-20 border-b border-dark-border/50">
       <div className="max-w-7xl mx-auto px-6 sm:px-10">
         <nav className="h-16 flex items-center justify-between">
           {/* Left: Logo + Nav */}
@@ -59,8 +73,21 @@ export default function Navbar() {
               <span className="hidden sm:inline">New Project</span>
             </button>
 
-            <div className="w-9 h-9 rounded-full bg-dark-elevated border border-dark-border flex items-center justify-center cursor-pointer hover:border-dark-border-light transition-colors">
-              <User className="w-4 h-4 text-muted" />
+            <div className="relative">
+              <div
+                id="user-action-card-button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => setUserMenuOpen((prev) => !prev)}
+                className="w-9 h-9 rounded-full bg-dark-elevated border border-dark-border flex items-center justify-center cursor-pointer hover:border-dark-border-light transition-colors"
+              >
+                <User className="w-4 h-4 text-muted" />
+              </div>
+
+              <UserMenuModal
+                isOpen={userMenuOpen}
+                onClose={() => setUserMenuOpen(false)}
+                onLogout={handleLogout}
+              />
             </div>
           </div>
         </nav>
