@@ -14,21 +14,25 @@ export function usePlayer() {
 
   function play() {
     if (isPlaying) return
+    // Initialize seekRef before setIsPlaying so the first frame has a valid reference point
     seekRef.current = { wallTime: performance.now(), playhead: useEditorStore.getState().playhead }
-    setIsPlaying(true)
+    useEditorStore.getState().setIsPlaying(true)
 
     function frame() {
+      // Read isPlaying from store snapshot — avoids stale closure after pause()
+      if (!useEditorStore.getState().isPlaying) return
+
       const elapsed = (performance.now() - seekRef.current.wallTime) / 1000
       const newPlayhead = seekRef.current.playhead + elapsed
       const duration = getProjectDuration(useEditorStore.getState().project.tracks)
 
       if (newPlayhead >= duration) {
-        setPlayhead(duration)
-        setIsPlaying(false)
+        useEditorStore.getState().setPlayhead(duration)
+        useEditorStore.getState().setIsPlaying(false)
         return
       }
 
-      setPlayhead(newPlayhead)
+      useEditorStore.getState().setPlayhead(newPlayhead)
       rafRef.current = requestAnimationFrame(frame)
     }
 
@@ -40,7 +44,7 @@ export function usePlayer() {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = undefined
     }
-    setIsPlaying(false)
+    useEditorStore.getState().setIsPlaying(false)
   }
 
   function seek(time: number) {
