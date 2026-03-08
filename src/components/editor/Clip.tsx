@@ -1,6 +1,6 @@
 import { useState, useEffect, type DragEvent } from "react"
 import type { Clip } from "../../project/projectTypes"
-import { timeToPx } from "../../utils/time"
+import { timeToPx, pxToTime } from "../../utils/time"
 import { useEditorStore } from "../../store/editorStore"
 
 interface ClipProps {
@@ -11,17 +11,21 @@ interface ClipProps {
   onDragStart: (e: DragEvent<HTMLDivElement>, clipId: string) => void
 }
 
-function getClipLabel(clip: Clip): string {
-  if (clip.type === "text") return clip.content || "Text"
-  return clip.mediaId
-}
-
 export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }: ClipProps) {
   const playhead = useEditorStore(s => s.playhead)
   const splitClip = useEditorStore(s => s.splitClip)
   const removeClip = useEditorStore(s => s.removeClip)
+  const resizeClip = useEditorStore(s => s.resizeClip)
+  const pushHistory = useEditorStore(s => s.pushHistory)
+  const projectMedia = useEditorStore(s => s.project.media)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  function getClipLabel(): string {
+    if (clip.type === "text") return clip.content || "Text"
+    const media = projectMedia.find(m => m.id === clip.mediaId)
+    return media?.name ?? clip.type
+  }
 
   // Close the context menu when the user clicks anywhere outside it
   useEffect(() => {
@@ -33,6 +37,36 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
 
   const left = timeToPx(clip.timelineStart, scale)
   const width = timeToPx(clip.timelineEnd - clip.timelineStart, scale)
+
+  const isAudio = clip.type === "audio"
+  const bgColor = isAudio
+    ? (isSelected ? "#16a34a" : "#166534")
+    : (isSelected ? "#3b82f6" : "#6366f1")
+  const borderColor = isAudio
+    ? (isSelected ? "#15803d" : "#14532d")
+    : (isSelected ? "#1d4ed8" : "#4338ca")
+
+  function handleResizeMouseDown(e: React.MouseEvent) {
+    e.stopPropagation()
+    e.preventDefault()
+    const startX = e.clientX
+    const originalEnd = clip.timelineEnd
+
+    function onMove(ev: MouseEvent) {
+      const dx = ev.clientX - startX
+      const newEnd = Math.max(clip.timelineStart + 0.5, originalEnd + pxToTime(dx, scale))
+      resizeClip(clip.id, newEnd)
+    }
+
+    function onUp() {
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+      pushHistory("Resize image clip")
+    }
+
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+  }
 
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault()
@@ -53,8 +87,8 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
           width: Math.max(width, 4),
           top: 4,
           bottom: 4,
-          backgroundColor: isSelected ? "#3b82f6" : "#6366f1",
-          border: isSelected ? "2px solid #1d4ed8" : "1px solid #4338ca",
+          backgroundColor: bgColor,
+          border: `${isSelected ? 2 : 1}px solid ${borderColor}`,
           borderRadius: 4,
           cursor: "grab",
           overflow: "hidden",
@@ -63,8 +97,24 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
         }}
       >
         <div style={{ padding: "2px 6px", fontSize: 11, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {getClipLabel(clip)}
+          {getClipLabel()}
         </div>
+
+        {(clip.type === "image" || clip.type === "text") && (
+          <div
+            onMouseDown={handleResizeMouseDown}
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              width: 8,
+              height: "100%",
+              cursor: "ew-resize",
+              backgroundColor: "rgba(255,255,255,0.18)",
+              zIndex: 2,
+            }}
+          />
+        )}
       </div>
 
       {contextMenu && (
