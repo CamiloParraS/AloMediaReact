@@ -3,6 +3,23 @@ import { useEditorStore } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
 import { getProjectDuration, timeToPx, pxToTime } from "../../utils/time"
 
+function getTickInterval(pxPerSecond: number): { major: number; minor: number } {
+  if (pxPerSecond >= 100) return { major: 1,   minor: 0.5  }
+  if (pxPerSecond >= 50)  return { major: 5,   minor: 1    }
+  if (pxPerSecond >= 20)  return { major: 15,  minor: 5    }
+  if (pxPerSecond >= 8)   return { major: 60,  minor: 15   }
+  return                          { major: 300, minor: 60  }
+}
+
+function formatTickLabel(seconds: number, majorInterval: number): string {
+  if (majorInterval >= 60) {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return s === 0 ? `${m}m` : `${m}:${String(s).padStart(2, "0")}`
+  }
+  return `${seconds}s`
+}
+
 interface PlayheadBarProps {
   totalWidth: number
 }
@@ -16,9 +33,15 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
   const rulerRef = useRef<HTMLDivElement>(null)
   const duration = getProjectDuration(tracks)
   const playheadLeft = timeToPx(playhead, timelineScale)
+  const { major, minor } = getTickInterval(timelineScale)
 
-  // Compute timeline time from a viewport X coordinate.
-  // getBoundingClientRect already accounts for container scroll, so no extra offset needed.
+  // Build tick list — step through at minor interval up to duration + 10
+  const rulerEnd = duration + 10
+  const tickCount = Math.ceil(rulerEnd / minor) + 1
+  const ticks = Array.from({ length: tickCount }, (_, i) => {
+    const t = i * minor
+    return { t, isMajor: t % major < 0.0001 }
+  })
   function timeFromClientX(clientX: number): number {
     if (!rulerRef.current) return 0
     const rect = rulerRef.current.getBoundingClientRect()
@@ -43,8 +66,6 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
     document.addEventListener("mouseup", onUp)
   }
 
-  const ticks = Array.from({ length: Math.ceil(duration) + 11 }, (_, i) => i)
-
   return (
     <div
       ref={rulerRef}
@@ -59,12 +80,12 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
         flexShrink: 0,
       }}
     >
-      {ticks.map(i => (
+      {ticks.map(({ t, isMajor }) => (
         <div
-          key={i}
+          key={t}
           style={{
             position: "absolute",
-            left: timeToPx(i, timelineScale),
+            left: timeToPx(t, timelineScale),
             top: 0,
             display: "flex",
             flexDirection: "column",
@@ -72,8 +93,12 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
             pointerEvents: "none",
           }}
         >
-          <div style={{ width: 1, height: 8, backgroundColor: "#334155" }} />
-          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 2 }}>{i}s</span>
+          <div style={{ width: 1, height: isMajor ? 10 : 5, backgroundColor: isMajor ? "#475569" : "#1e293b" }} />
+          {isMajor && (
+            <span style={{ fontSize: 10, color: "#64748b", marginLeft: 2 }}>
+              {formatTickLabel(t, major)}
+            </span>
+          )}
         </div>
       ))}
 
