@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react"
 import { useEditorStore, fileMap } from "../../store/editorStore"
 import { MediaCard, LoadingCard } from "./MediaCard"
 import { generateId } from "../../utils/id"
+import { generateProxy } from "../../engine/proxyEngine"
 
 interface PendingMedia {
   tempId: string
@@ -10,6 +11,8 @@ interface PendingMedia {
 
 export function MediaLibrary() {
   const addMedia = useEditorStore(s => s.addMedia)
+  const setProxyState = useEditorStore(s => s.setProxyState)
+  const proxyMap = useEditorStore(s => s.proxyMap)
   const media = useEditorStore(s => s.project.media)
   const inputRef = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<PendingMedia[]>([])
@@ -39,8 +42,17 @@ export function MediaLibrary() {
     setPending(prev => [...prev, ...newPending])
     await Promise.all(
       fileArray.map(async (file, i) => {
-        await addMedia(file)
+        const m = await addMedia(file)
         setPending(prev => prev.filter(p => p.tempId !== newPending[i].tempId))
+        if (m.type === 'video') {
+          setProxyState(m.id, { status: 'pending', objectUrl: null })
+          generateProxy(
+            m.id,
+            file,
+            (url) => setProxyState(m.id, { status: 'ready', objectUrl: url }),
+            () => setProxyState(m.id, { status: 'error', objectUrl: null }),
+          )
+        }
       })
     )
   }
@@ -67,7 +79,7 @@ export function MediaLibrary() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
         {media.map(item => (
-          <MediaCard key={item.id} media={item} objectUrl={getObjectUrl(item.id)} />
+          <MediaCard key={item.id} media={item} objectUrl={getObjectUrl(item.id)} proxyStatus={proxyMap[item.id]?.status} />
         ))}
         {pending.map(p => (
           <LoadingCard key={p.tempId} fileName={p.fileName} />
