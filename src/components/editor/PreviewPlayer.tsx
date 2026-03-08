@@ -32,6 +32,8 @@ export function PreviewPlayer() {
   const selectedClipId = useEditorStore(s => s.selectedClipId)
   const updateClipTransform = useEditorStore(s => s.updateClipTransform)
   const commitTransform = useEditorStore(s => s.commitTransform)
+  const setSelectedClip = useEditorStore(s => s.setSelectedClip)
+  const proxyMap = useEditorStore(s => s.proxyMap)
   const { play, pause, seek } = usePlayer()
   const duration = getProjectDuration(project.tracks)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
@@ -49,6 +51,13 @@ export function PreviewPlayer() {
     const url = URL.createObjectURL(file)
     objectUrlsRef.current.set(mediaId, url)
     return url
+  }
+
+  // Use proxy URL for video playback when ready; fall back to original
+  function getPlaybackUrl(mediaId: string): string | undefined {
+    const proxy = proxyMap[mediaId]
+    if (proxy?.status === 'ready' && proxy.objectUrl) return proxy.objectUrl
+    return getObjectUrl(mediaId)
   }
 
   // Revoke all object URLs when the component unmounts
@@ -90,7 +99,7 @@ export function PreviewPlayer() {
         if (!activeIds.has(clip.id)) continue
         if (clip.type !== "video" && clip.type !== "audio") continue
         const el = mediaRefsRef.current.get(clip.id)
-        if (!el) continue
+        if (!el || el.readyState < 1) continue // skip if metadata not yet loaded
         const offset = ph - clip.timelineStart
         el.currentTime = (clip as VideoClip | AudioClip).mediaStart + offset
       }
@@ -133,17 +142,41 @@ export function PreviewPlayer() {
     borderRadius: 4,
   }
 
+  function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = canvasContainerRef.current!.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+    // Convert 640x360 CSS pixels to 1280x720 canvas space
+    const canvasX = mouseX / (rect.width / 1280)
+    const canvasY = mouseY / (rect.height / 720)
+
+    const hit = [...activeClips].reverse().find(clip => {
+      if (clip.type === 'audio') return false
+      const t = clip.transform
+      return canvasX >= t.x && canvasX <= t.x + t.width
+          && canvasY >= t.y && canvasY <= t.y + t.height
+    })
+
+    if (hit) {
+      setSelectedClip(hit.id)
+    } else {
+      setSelectedClip(undefined)
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
     {/* Canvas shell — 640x360 (half of 1280x720) */}
     <div
       ref={canvasContainerRef}
+      onClick={handleCanvasClick}
       style={{
         position: "relative",
         width: 640,
         height: 360,
         backgroundColor: "#000",
         overflow: "hidden",
+        cursor: "default",
       }}
     >
       {/* Inner canvas scaled 0.5 — all transforms are authored at 1280x720 */}
@@ -159,7 +192,7 @@ export function PreviewPlayer() {
       >
         {activeClips.map(clip => {
           if (clip.type === "video") {
-            const url = getObjectUrl(clip.mediaId)
+            const url = getPlaybackUrl(clip.mediaId)
             return (
               <video
                 key={clip.id}
