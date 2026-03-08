@@ -16,9 +16,10 @@ export function Timeline() {
   const timelineScale = useEditorStore(s => s.timelineScale)
   const addClip = useEditorStore(s => s.addClip)
   const moveClip = useEditorStore(s => s.moveClip)
+  const addTrack = useEditorStore(s => s.addTrack)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const { xToTime, hasCollision, dragOverTrackId, setDragOverTrack } = useTimeline()
+  const { xToTime, hasCollision, snapToNeighbor, resolveDropPosition, dragOverTrackId, setDragOverTrack } = useTimeline()
 
   const duration = getProjectDuration(project.tracks)
   // Always show at least 30 seconds of ruler
@@ -32,8 +33,9 @@ export function Timeline() {
 
     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
     const mouseX = e.clientX - rect.left
-    const timelineStart = Math.max(0, xToTime(mouseX))
+    const rawStart = Math.max(0, xToTime(mouseX))
     const clipDuration = media.duration ?? 5
+    const timelineStart = resolveDropPosition(trackId, rawStart, clipDuration)
     const timelineEnd = timelineStart + clipDuration
 
     if (hasCollision(trackId, timelineStart, timelineEnd)) return
@@ -93,8 +95,9 @@ export function Timeline() {
 
     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
     const mouseX = e.clientX - rect.left
-    const newStart = Math.max(0, pxToTime(mouseX - offsetX, timelineScale))
+    const rawStart = Math.max(0, pxToTime(mouseX - offsetX, timelineScale))
     const clipDuration = sourceClip.timelineEnd - sourceClip.timelineStart
+    const newStart = resolveDropPosition(targetTrackId, rawStart, clipDuration, clipId)
     const newEnd = newStart + clipDuration
 
     if (hasCollision(targetTrackId, newStart, newEnd, clipId)) return
@@ -104,49 +107,67 @@ export function Timeline() {
 
   const totalWidth = timeToPx(rulerDuration, timelineScale)
 
+  const addTrackBtnStyle: React.CSSProperties = {
+    padding: "4px 10px",
+    fontSize: 12,
+    cursor: "pointer",
+    border: "1px solid #334155",
+    backgroundColor: "#1e293b",
+    color: "#94a3b8",
+    borderRadius: 4,
+  }
+
   return (
-    <div
-      ref={containerRef}
-      style={{
-        flex: 1,
-        overflowX: "auto",
-        overflowY: "hidden",
-        backgroundColor: "#020617",
-        position: "relative",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      {/* Inner container sized to timeline duration */}
-      <div style={{ minWidth: totalWidth, position: "relative", display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "#020617", overflow: "hidden" }}>
+      {/* Scrollable timeline area */}
+      <div
+        ref={containerRef}
+        style={{
+          flex: 1,
+          overflowX: "auto",
+          overflowY: "hidden",
+          position: "relative",
+        }}
+      >
+        {/* Inner container sized to timeline duration */}
+        <div style={{ minWidth: totalWidth, position: "relative", display: "flex", flexDirection: "column" }}>
 
-        <PlayheadBar totalWidth={totalWidth} />
+          <PlayheadBar totalWidth={totalWidth} />
 
-        {/* Playhead needle — full-height vertical line spanning ruler + all tracks */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: timeToPx(playhead, timelineScale),
-            width: 2,
-            height: "100%",
-            backgroundColor: "#ef4444",
-            pointerEvents: "none",
-            zIndex: 10,
-          }}
-        />
-
-        {/* Tracks */}
-        {project.tracks.map(track => (
-          <TrackComponent
-            key={track.id}
-            track={track}
-            dragOverTrackId={dragOverTrackId}
-            setDragOverTrack={setDragOverTrack}
-            onDrop={handleMediaDrop}
-            onClipDrop={handleClipDrop}
+          {/* Playhead needle — full-height vertical line spanning ruler + all tracks */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: timeToPx(playhead, timelineScale),
+              width: 2,
+              height: "100%",
+              backgroundColor: "#ef4444",
+              pointerEvents: "none",
+              zIndex: 10,
+            }}
           />
-        ))}
+
+          {/* Tracks */}
+          {project.tracks.map(track => (
+            <TrackComponent
+              key={track.id}
+              track={track}
+              dragOverTrackId={dragOverTrackId}
+              setDragOverTrack={setDragOverTrack}
+              onDrop={handleMediaDrop}
+              onClipDrop={handleClipDrop}
+              resolveDropPosition={resolveDropPosition}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Add track buttons */}
+      <div style={{ display: "flex", gap: 6, padding: "6px 8px", borderTop: "1px solid #1e293b", flexShrink: 0, backgroundColor: "#020617" }}>
+        <button onClick={() => addTrack("video")} style={addTrackBtnStyle}>+ Video Track</button>
+        <button onClick={() => addTrack("overlay")} style={addTrackBtnStyle}>+ Overlay Track</button>
+        <button onClick={() => addTrack("audio")} style={addTrackBtnStyle}>+ Audio Track</button>
       </div>
     </div>
   )
