@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { generateId } from "../utils/id"
-import type { Clip, EditorState, Media, MediaType, Project } from "../project/projectTypes"
+import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType } from "../project/projectTypes"
 
 // Module-level file registry. Not part of reactive Zustand state — Map mutations
 // don't trigger re-renders, but PreviewPlayer reads it after project.media updates.
@@ -12,6 +12,11 @@ type StoreActions = {
   removeClip: (clipId: string) => void
   moveClip: (clipId: string, newStart: number, trackId: string) => void
   splitClip: (clipId: string, time: number) => void
+  addTrack: (type: TrackType) => Track
+  removeTrack: (trackId: string) => void
+  resizeClip: (clipId: string, newEnd: number) => void
+  updateClipTransform: (clipId: string, transform: Partial<import('./projectTypes').Transform>) => void
+  commitTransform: (clipId: string) => void
   setPlayhead: (time: number) => void
   setIsPlaying: (value: boolean) => void
   setTimelineScale: (scale: number) => void
@@ -174,6 +179,74 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         },
       }
     })
+  },
+
+  addTrack(type: TrackType): Track {
+    get().pushHistory("Add track")
+    const newTrack: Track = {
+      id: generateId(),
+      type,
+      order: get().project.tracks.length,
+      clips: [],
+    }
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: [...state.project.tracks, newTrack],
+      },
+    }))
+    return newTrack
+  },
+
+  removeTrack(trackId: string): void {
+    const { project } = get()
+    const track = project.tracks.find(t => t.id === trackId)
+    if (!track) return
+    const sameType = project.tracks.filter(t => t.type === track.type)
+    if (sameType.length <= 1) return
+    get().pushHistory("Remove track")
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.filter(t => t.id !== trackId),
+      },
+    }))
+  },
+
+  resizeClip(clipId: string, newEnd: number): void {
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            if (clip.id !== clipId) return clip
+            if (newEnd <= clip.timelineStart + 0.5) return clip
+            return { ...clip, timelineEnd: newEnd }
+          }),
+        })),
+      },
+    }))
+  },
+
+  updateClipTransform(clipId: string, transform: Partial<import('./projectTypes').Transform>): void {
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            if (clip.id !== clipId) return clip
+            if (!('transform' in clip)) return clip
+            return { ...clip, transform: { ...(clip as any).transform, ...transform } }
+          }),
+        })),
+      },
+    }))
+  },
+
+  commitTransform(clipId: string): void {
+    get().pushHistory('Transform clip')
   },
 
   splitClip(clipId: string, time: number): void {
