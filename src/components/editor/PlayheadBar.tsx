@@ -1,7 +1,7 @@
 import { useRef } from "react"
 import { useEditorStore } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
-import { getProjectDuration, timeToPx, pxToTime } from "../../utils/time"
+import { getProjectDuration, timeToPx, pxToTime, TRACK_HEADER_WIDTH } from "../../utils/time"
 
 function getTickInterval(pxPerSecond: number): { major: number; minor: number } {
   if (pxPerSecond >= 100) return { major: 1,   minor: 0.5  }
@@ -28,7 +28,7 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
   const playhead = useEditorStore(s => s.playhead)
   const timelineScale = useEditorStore(s => s.timelineScale)
   const tracks = useEditorStore(s => s.project.tracks)
-  const { seek } = usePlayer()
+  const { seek, pause } = usePlayer()
 
   const rulerRef = useRef<HTMLDivElement>(null)
   const duration = getProjectDuration(tracks)
@@ -45,11 +45,12 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
   function timeFromClientX(clientX: number): number {
     if (!rulerRef.current) return 0
     const rect = rulerRef.current.getBoundingClientRect()
-    return Math.max(0, pxToTime(clientX - rect.left, timelineScale))
+    return Math.max(0, pxToTime(clientX - rect.left - TRACK_HEADER_WIDTH, timelineScale))
   }
 
   function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
     e.preventDefault()
+    if (useEditorStore.getState().isPlaying) pause()
     seek(timeFromClientX(e.clientX))
 
     function onMove(ev: MouseEvent) {
@@ -71,13 +72,16 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
       ref={rulerRef}
       onMouseDown={handleMouseDown}
       style={{
-        position: "relative",
+        position: "sticky",
+        top: 0,
+        zIndex: 10,
         height: 28,
         minWidth: totalWidth,
         borderBottom: "1px solid #1e293b",
         cursor: "pointer",
         userSelect: "none",
         flexShrink: 0,
+        backgroundColor: "#020617",
       }}
     >
       {ticks.map(({ t, isMajor }) => (
@@ -85,7 +89,7 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
           key={t}
           style={{
             position: "absolute",
-            left: timeToPx(t, timelineScale),
+            left: TRACK_HEADER_WIDTH + timeToPx(t, timelineScale),
             top: 0,
             display: "flex",
             flexDirection: "column",
@@ -106,7 +110,7 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
       <div
         style={{
           position: "absolute",
-          left: playheadLeft - 6,
+          left: TRACK_HEADER_WIDTH + playheadLeft - 6,
           top: 8,
           width: 12,
           height: 12,
