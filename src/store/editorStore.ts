@@ -2,6 +2,11 @@ import { create } from "zustand"
 import { generateId } from "../utils/id"
 import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType } from "../project/projectTypes"
 
+export interface ProxyState {
+  status: 'pending' | 'ready' | 'error'
+  objectUrl: string | null
+}
+
 // Module-level file registry. Not part of reactive Zustand state — Map mutations
 // don't trigger re-renders, but PreviewPlayer reads it after project.media updates.
 export const fileMap = new Map<string, File>()
@@ -14,6 +19,7 @@ type StoreActions = {
   splitClip: (clipId: string, time: number) => void
   addTrack: (type: TrackType) => Track
   removeTrack: (trackId: string) => void
+  reorderTrack: (sourceTrackId: string, targetTrackId: string) => void
   resizeClip: (clipId: string, newEnd: number) => void
   updateClipTransform: (clipId: string, transform: Partial<import('./projectTypes').Transform>) => void
   commitTransform: (clipId: string) => void
@@ -25,6 +31,8 @@ type StoreActions = {
   pushHistory: (description: string) => void
   undo: () => void
   redo: () => void
+  proxyMap: Record<string, ProxyState>
+  setProxyState: (mediaId: string, state: ProxyState) => void
 }
 
 type EditorStore = EditorState & StoreActions
@@ -36,8 +44,7 @@ function makeInitialProject(): Project {
     media: [],
     tracks: [
       { id: generateId(), type: "video", order: 0, clips: [] },
-      { id: generateId(), type: "overlay", order: 1, clips: [] },
-      { id: generateId(), type: "audio", order: 2, clips: [] },
+      { id: generateId(), type: "audio", order: 1, clips: [] },
     ],
   }
 }
@@ -80,10 +87,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   isPlaying: false,
   history: [],
   historyIndex: -1,
+  proxyMap: {},
+
+  setProxyState(mediaId: string, state: ProxyState): void {
+    set(s => ({ proxyMap: { ...s.proxyMap, [mediaId]: state } }))
+  },
 
   async addMedia(file: File): Promise<Media> {
-    const buffer = await file.arrayBuffer()
-    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer)
+    const raw = `${file.name}-${file.size}-${file.lastModified}`
+    const encoded = new TextEncoder().encode(raw)
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoded)
     const hash = Array.from(new Uint8Array(hashBuffer))
       .map(b => b.toString(16).padStart(2, "0"))
       .join("")
@@ -211,6 +224,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         tracks: state.project.tracks.filter(t => t.id !== trackId),
       },
     }))
+  },
+
+  reorderTrack(sourceTrackId: string, targetTrackId: string): void {
+    get().pushHistory('Reorder track')
+    set(state => {
+      const tracks = state.project.tracks
+      const source = tracks.find(t => t.id === sourceTrackId)
+      const target = tracks.find(t => t.id === targetTrackId)
+      if (!source || !target) return state
+      const sourceOrder = source.order
+      const targetOrder = target.order
+      const reordered = tracks.map(t => {
+        if (t.id === sourceTrackId) return { ...t, order: targetOrder }
+        if (t.id === targetTrackId) return { ...t, order: sourceOrder }
+        return t
+      })
+      return { project: { ...state.project, tracks: reordered.sort((a, b) => a.order - b.order) } }
+    })
   },
 
   resizeClip(clipId: string, newEnd: number): void {
