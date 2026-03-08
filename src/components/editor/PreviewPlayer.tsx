@@ -1,7 +1,18 @@
 import { useEffect, useRef } from "react"
-import type { AudioClip, Transform, VideoClip } from "../../project/projectTypes"
+import type { AudioClip, ImageClip, TextClip, Transform, VideoClip } from "../../project/projectTypes"
 import { useEditorStore } from "../../store/editorStore"
 import { fileMap } from "../../store/editorStore"
+import { usePlayer } from "../../hooks/usePlayer"
+import { getProjectDuration } from "../../utils/time"
+import { TransformOverlay } from "./TransformOverlay"
+
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return [h, m, s].map(v => String(v).padStart(2, "0")).join(":")
+  return [m, s].map(v => String(v).padStart(2, "0")).join(":")
+}
 
 function applyTransform(t: Transform): React.CSSProperties {
   return {
@@ -18,6 +29,12 @@ export function PreviewPlayer() {
   const project = useEditorStore(s => s.project)
   const playhead = useEditorStore(s => s.playhead)
   const isPlaying = useEditorStore(s => s.isPlaying)
+  const selectedClipId = useEditorStore(s => s.selectedClipId)
+  const updateClipTransform = useEditorStore(s => s.updateClipTransform)
+  const commitTransform = useEditorStore(s => s.commitTransform)
+  const { play, pause, seek } = usePlayer()
+  const duration = getProjectDuration(project.tracks)
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
 
   // Object URL registry — create once per mediaId, revoke on unmount
   const objectUrlsRef = useRef<Map<string, string>>(new Map())
@@ -106,16 +123,27 @@ export function PreviewPlayer() {
     )
   )
 
+  const btnStyle: React.CSSProperties = {
+    padding: "4px 10px",
+    fontSize: 13,
+    cursor: "pointer",
+    border: "1px solid #334155",
+    backgroundColor: "#1e293b",
+    color: "#e2e8f0",
+    borderRadius: 4,
+  }
+
   return (
-    // Outer shell is 640x360 (half of 1280x720 canvas)
+    <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+    {/* Canvas shell — 640x360 (half of 1280x720) */}
     <div
+      ref={canvasContainerRef}
       style={{
         position: "relative",
         width: 640,
         height: 360,
         backgroundColor: "#000",
         overflow: "hidden",
-        flexShrink: 0,
       }}
     >
       {/* Inner canvas scaled 0.5 — all transforms are authored at 1280x720 */}
@@ -126,6 +154,7 @@ export function PreviewPlayer() {
           height: 720,
           transform: "scale(0.5)",
           transformOrigin: "0 0",
+          pointerEvents: selectedClipId ? "none" : undefined,
         }}
       >
         {activeClips.map(clip => {
@@ -166,6 +195,7 @@ export function PreviewPlayer() {
           if (clip.type === "audio") {
             const url = getObjectUrl(clip.mediaId)
             return (
+              // eslint-disable-next-line jsx-a11y/media-has-caption
               <audio
                 key={clip.id}
                 ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
@@ -177,6 +207,59 @@ export function PreviewPlayer() {
           return null
         })}
       </div>
+
+      {/* Transform overlay — shown when a visual clip is selected */}
+      {(() => {
+        if (!selectedClipId) return null
+        let selectedClip: VideoClip | ImageClip | TextClip | undefined
+        for (const track of project.tracks) {
+          const found = track.clips.find(c => c.id === selectedClipId)
+          if (found && found.type !== "audio") {
+            selectedClip = found as VideoClip | ImageClip | TextClip
+            break
+          }
+        }
+        if (!selectedClip) return null
+        return (
+          <TransformOverlay
+            clip={selectedClip}
+            previewWidth={canvasContainerRef.current?.clientWidth ?? 640}
+            previewHeight={canvasContainerRef.current?.clientHeight ?? 360}
+            onUpdate={t => updateClipTransform(selectedClipId, t)}
+            onCommit={() => commitTransform(selectedClipId)}
+          />
+        )
+      })()}
+    </div>
+
+    {/* Inline controls */}
+    <div style={{ width: 640, backgroundColor: "#0f172a", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6, boxSizing: "border-box" }}>
+      {/* Buttons row */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button style={btnStyle} onClick={() => seek(Math.max(0, playhead - 10))}>-10s</button>
+        <button style={btnStyle} onClick={() => isPlaying ? pause() : play()}>
+          {isPlaying ? "\u23F8" : "\u25B6"}
+        </button>
+        <button style={btnStyle} onClick={() => seek(Math.min(duration, playhead + 10))}>+10s</button>
+      </div>
+
+      {/* Seek bar */}
+      <input
+        type="range"
+        min={0}
+        max={duration || 1}
+        step={0.01}
+        value={playhead}
+        onChange={e => seek(Number(e.target.value))}
+        style={{ width: "100%" }}
+      />
+
+      {/* Time display */}
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
+        <span>{formatTime(playhead)}</span>
+        <span>{formatTime(duration)}</span>
+      </div>
+    </div>
     </div>
   )
 }
