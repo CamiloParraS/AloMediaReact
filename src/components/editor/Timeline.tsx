@@ -2,7 +2,7 @@ import type { DragEvent } from "react"
 import { useRef } from "react"
 import { useEditorStore } from "../../store/editorStore"
 import { useTimeline } from "../../hooks/useTimeline"
-import { getProjectDuration, timeToPx, pxToTime } from "../../utils/time"
+import { getProjectDuration, timeToPx, pxToTime, TRACK_HEADER_WIDTH } from "../../utils/time"
 import { generateId } from "../../utils/id"
 import type { Clip, Transform } from "../../project/projectTypes"
 import { TrackComponent } from "./Track"
@@ -19,7 +19,7 @@ export function Timeline() {
   const addTrack = useEditorStore(s => s.addTrack)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const { xToTime, hasCollision, snapToNeighbor, resolveDropPosition, dragOverTrackId, setDragOverTrack } = useTimeline()
+  const { xToTime, hasCollision, resolveDropPosition, dragOverTrackId, setDragOverTrack } = useTimeline()
 
   const duration = getProjectDuration(project.tracks)
   // Always show at least 30 seconds of ruler
@@ -32,7 +32,7 @@ export function Timeline() {
     if (!media) return
 
     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
+    const mouseX = e.clientX - rect.left - TRACK_HEADER_WIDTH
     const rawStart = Math.max(0, xToTime(mouseX))
     const clipDuration = media.duration ?? 5
     const timelineStart = resolveDropPosition(trackId, rawStart, clipDuration)
@@ -94,7 +94,7 @@ export function Timeline() {
     if (!sourceClip) return
 
     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
+    const mouseX = e.clientX - rect.left - TRACK_HEADER_WIDTH
     const rawStart = Math.max(0, pxToTime(mouseX - offsetX, timelineScale))
     const clipDuration = sourceClip.timelineEnd - sourceClip.timelineStart
     const newStart = resolveDropPosition(targetTrackId, rawStart, clipDuration, clipId)
@@ -125,7 +125,7 @@ export function Timeline() {
         style={{
           flex: 1,
           overflowX: "auto",
-          overflowY: "hidden",
+          overflowY: "auto",
           position: "relative",
         }}
       >
@@ -139,7 +139,7 @@ export function Timeline() {
             style={{
               position: "absolute",
               top: 0,
-              left: timeToPx(playhead, timelineScale),
+              left: TRACK_HEADER_WIDTH + timeToPx(playhead, timelineScale),
               width: 2,
               height: "100%",
               backgroundColor: "#ef4444",
@@ -149,7 +149,7 @@ export function Timeline() {
           />
 
           {/* Tracks */}
-          {project.tracks.map(track => (
+          {[...project.tracks].sort((a, b) => a.order - b.order).map(track => (
             <TrackComponent
               key={track.id}
               track={track}
