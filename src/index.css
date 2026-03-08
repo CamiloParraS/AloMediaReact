@@ -56,6 +56,10 @@
   }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* * {
   margin: 0;
   padding: 0;
