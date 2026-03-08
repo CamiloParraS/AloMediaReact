@@ -33,7 +33,7 @@ function MediaThumbnail({ media, objectUrl }: { media: Media; objectUrl: string 
   )
 }
 
-export function MediaCard({ media, objectUrl }: { media: Media; objectUrl: string | undefined }) {
+export function MediaCard({ media, objectUrl, proxyStatus }: { media: Media; objectUrl: string | undefined; proxyStatus?: 'pending' | 'ready' | 'error' }) {
   return (
     <div
       draggable
@@ -57,6 +57,8 @@ export function MediaCard({ media, objectUrl }: { media: Media; objectUrl: strin
         </div>
         <div style={{ color: "#94a3b8", fontSize: 11 }}>
           {formatMediaMeta(media)}
+          {proxyStatus === 'pending' && <span style={{ marginLeft: 4, color: "#64748b" }}>proxy...</span>}
+          {proxyStatus === 'error' && <span style={{ marginLeft: 4, color: "#ef4444" }}>proxy failed</span>}
         </div>
       </div>
     </div>
