@@ -1,34 +1,57 @@
-import { useRef } from "react"
-import { useEditorStore } from "../../store/editorStore"
-import type { Media } from "../../project/projectTypes"
+import { useRef, useState, useEffect } from "react"
+import { useEditorStore, fileMap } from "../../store/editorStore"
+import { MediaCard, LoadingCard } from "./MediaCard"
+import { generateId } from "../../utils/id"
+
+interface PendingMedia {
+  tempId: string
+  fileName: string
+}
 
 export function MediaLibrary() {
   const addMedia = useEditorStore(s => s.addMedia)
   const media = useEditorStore(s => s.project.media)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [pending, setPending] = useState<PendingMedia[]>([])
+  // One object URL per mediaId, revoked on unmount
+  const objectUrlsRef = useRef<Map<string, string>>(new Map())
+
+  function getObjectUrl(mediaId: string): string | undefined {
+    const existing = objectUrlsRef.current.get(mediaId)
+    if (existing) return existing
+    const file = fileMap.get(mediaId)
+    if (!file) return undefined
+    const url = URL.createObjectURL(file)
+    objectUrlsRef.current.set(mediaId, url)
+    return url
+  }
+
+  useEffect(() => {
+    return () => {
+      objectUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [])
 
   async function handleFiles(files: FileList | null) {
     if (!files) return
-    for (const file of Array.from(files)) {
-      await addMedia(file)
-    }
-  }
-
-  function formatDuration(item: Media): string {
-    if (item.duration === null) return "image"
-    const secs = Math.round(item.duration)
-    const m = Math.floor(secs / 60)
-    const s = secs % 60
-    return `${m}:${s.toString().padStart(2, "0")}`
+    const fileArray = Array.from(files)
+    const newPending: PendingMedia[] = fileArray.map(file => ({ tempId: generateId(), fileName: file.name }))
+    setPending(prev => [...prev, ...newPending])
+    await Promise.all(
+      fileArray.map(async (file, i) => {
+        await addMedia(file)
+        setPending(prev => prev.filter(p => p.tempId !== newPending[i].tempId))
+      })
+    )
   }
 
   return (
-    <div style={{ width: 240, padding: 12, borderRight: "1px solid #ccc", display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontWeight: 600 }}>Media Library</div>
+    <div style={{ width: 240, padding: 12, borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", gap: 12, backgroundColor: "#020617" }}>
+      <div style={{ fontWeight: 600, color: "#e2e8f0" }}>Media Library</div>
 
       <button
         onClick={() => inputRef.current?.click()}
-        style={{ padding: "6px 12px", cursor: "pointer" }}
+        style={{ padding: "6px 12px", cursor: "pointer", backgroundColor: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 4 }}
       >
         Add Media
       </button>
@@ -39,30 +62,15 @@ export function MediaLibrary() {
         accept="video/*,audio/*,image/*"
         multiple
         style={{ display: "none" }}
-        onChange={e => handleFiles(e.target.files)}
+        onChange={e => { handleFiles(e.target.files); e.target.value = "" }}
       />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
         {media.map(item => (
-          <div
-            key={item.id}
-            draggable
-            onDragStart={e => e.dataTransfer.setData("mediaId", item.id)}
-            style={{
-              padding: "6px 8px",
-              border: "1px solid #ddd",
-              borderRadius: 4,
-              cursor: "grab",
-              fontSize: 13,
-            }}
-          >
-            <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {item.name}
-            </div>
-            <div style={{ color: "#666", fontSize: 11 }}>
-              {item.type} &middot; {formatDuration(item)}
-            </div>
-          </div>
+          <MediaCard key={item.id} media={item} objectUrl={getObjectUrl(item.id)} />
+        ))}
+        {pending.map(p => (
+          <LoadingCard key={p.tempId} fileName={p.fileName} />
         ))}
       </div>
     </div>
