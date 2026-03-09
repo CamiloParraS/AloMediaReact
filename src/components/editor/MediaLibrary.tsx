@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect } from "react"
+import { FilePlus2 } from "lucide-react"
 import { useEditorStore, fileMap } from "../../store/editorStore"
 import { MediaCard, LoadingCard } from "./MediaCard"
 import { generateId } from "../../utils/id"
 import { generateProxy } from "../../engine/proxyEngine"
+import { LabelButton } from "../ui/LabelButton"
 
 interface PendingMedia {
   tempId: string
@@ -57,34 +59,60 @@ export function MediaLibrary() {
     )
   }
 
-  return (
-    <div style={{ width: 240, padding: 12, borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", gap: 12, backgroundColor: "#020617" }}>
-      <div style={{ fontWeight: 600, color: "#e2e8f0" }}>Media Library</div>
+  const hasItems = media.length > 0 || pending.length > 0
 
-      <button
-        onClick={() => inputRef.current?.click()}
-        style={{ padding: "6px 12px", cursor: "pointer", backgroundColor: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 4 }}
-      >
-        Add Media
-      </button>
+  return (
+    <div className="flex flex-col h-full bg-dark-surface overflow-hidden">
+      {/* Header — only shown when items exist */}
+      {hasItems && (
+        <div className="flex items-center justify-between px-3 py-2 border-b border-dark-border shrink-0">
+          <span className="text-xs font-semibold text-muted-light uppercase tracking-wider">Media</span>
+          <LabelButton
+            icon={<FilePlus2 />}
+            label="Add Media"
+            variant="ghost"
+            size="sm"
+            onClick={() => inputRef.current?.click()}
+          />
+        </div>
+      )}
 
       <input
         ref={inputRef}
         type="file"
         accept="video/*,audio/*,image/*"
         multiple
-        style={{ display: "none" }}
+        className="hidden"
         onChange={e => { handleFiles(e.target.files); e.target.value = "" }}
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
-        {media.map(item => (
-          <MediaCard key={item.id} media={item} objectUrl={getObjectUrl(item.id)} proxyStatus={proxyMap[item.id]?.status} />
-        ))}
-        {pending.map(p => (
-          <LoadingCard key={p.tempId} fileName={p.fileName} />
-        ))}
-      </div>
+      {/* Empty state — full-panel clickable drop zone */}
+      {!hasItems && (
+        <div
+          className="flex flex-col items-center justify-center flex-1 m-3 gap-4 rounded-xl border-2 border-dashed border-dark-border hover:border-accent-red/60 hover:bg-dark-elevated/20 editor-transition"
+        >
+          <LabelButton
+            icon={<FilePlus2 />}
+            label="Add Media"
+            variant="primary"
+            size="lg"
+            onClick={() => inputRef.current?.click()}
+          />
+          <span className="text-xs text-muted opacity-60 select-none">video, audio or images</span>
+        </div>
+      )}
+
+      {/* 2-column square grid — shown when items exist */}
+      {hasItems && (
+        <div className="grid grid-cols-2 gap-2 p-2 overflow-y-auto flex-1">
+          {media.map(item => (
+            <MediaCard key={item.id} media={item} objectUrl={getObjectUrl(item.id)} proxyStatus={proxyMap[item.id]?.status} />
+          ))}
+          {pending.map(p => (
+            <LoadingCard key={p.tempId} fileName={p.fileName} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
