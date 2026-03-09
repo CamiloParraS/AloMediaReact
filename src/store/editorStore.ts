@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { generateId } from "../utils/id"
 import { TIMELINE_ZOOM } from "../constants/timeline"
 import { getInsertionIndex } from "../utils/tracks"
+import { toMs, toSeconds } from "../utils/time"
 import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType } from "../project/projectTypes"
 
 export interface ProxyState {
@@ -175,12 +176,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       if (!targetClip) return state
 
+      const roundedStart = toSeconds(toMs(newStart))
       const duration = targetClip.timelineEnd - targetClip.timelineStart
       const updatedClip: Clip = {
         ...targetClip,
         trackId,
-        timelineStart: newStart,
-        timelineEnd: newStart + duration,
+        timelineStart: roundedStart,
+        timelineEnd: toSeconds(toMs(roundedStart + duration)),
       }
 
       return {
@@ -303,22 +305,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       get().pushHistory("Split clip")
 
-      const splitPoint = time - clip.timelineStart
+      // Round cut time to nearest ms — both halves share the exact same value,
+      // guaranteeing clipA.timelineEnd === clipB.timelineStart with no float gap.
+      const cutTime = toSeconds(toMs(time))
+      const splitPoint = cutTime - clip.timelineStart
 
       const firstHalf: Clip = {
         ...deepClone(clip),
         id: generateId(),
-        timelineEnd: time,
+        timelineEnd: cutTime,
         // Adjust mediaEnd for media-backed clips
-        ...("mediaEnd" in clip ? { mediaEnd: clip.mediaStart + splitPoint } : {}),
+        ...("mediaEnd" in clip ? { mediaEnd: toSeconds(toMs(clip.mediaStart + splitPoint)) } : {}),
       } as Clip
 
       const secondHalf: Clip = {
         ...deepClone(clip),
         id: generateId(),
-        timelineStart: time,
+        timelineStart: cutTime,
         // Adjust mediaStart for media-backed clips
-        ...("mediaStart" in clip ? { mediaStart: clip.mediaStart + splitPoint } : {}),
+        ...("mediaStart" in clip ? { mediaStart: toSeconds(toMs(clip.mediaStart + splitPoint)) } : {}),
       } as Clip
 
       return {
@@ -335,7 +340,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setPlayhead(time: number): void {
-    set({ playhead: time })
+    // Round to nearest millisecond to eliminate sub-ms float drift
+    set({ playhead: toSeconds(toMs(time)) })
   },
 
   setIsPlaying(value: boolean): void {
