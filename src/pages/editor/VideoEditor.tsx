@@ -1,4 +1,5 @@
 import { useRef, useState } from "react"
+import { Settings2, Save, Upload, Share2 } from "lucide-react"
 import { MediaLibrary } from "../../components/editor/MediaLibrary"
 import { Timeline } from "../../components/editor/Timeline"
 import { Toolbar } from "../../components/editor/Toolbar"
@@ -8,12 +9,14 @@ import { exportProjectJSON, loadProject } from "../../project/projectSerializer"
 import { buildRenderJob } from "../../engine/renderPipeline"
 import { renderJob } from "../../engine/ffmpegEngine"
 import { fileMap } from "../../store/editorStore"
+import { IconButton } from "../../components/ui/IconButton"
+import { LabelButton } from "../../components/ui/LabelButton"
 
 export default function VideoEditor() {
   const project = useEditorStore(s => s.project)
-  const setProject = useEditorStore(s => s.undo) // used only for shape ref; actual load below
-
   const [isRendering, setIsRendering] = useState(false)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(project.name)
   const loadInputRef = useRef<HTMLInputElement>(null)
 
   async function handleRender() {
@@ -21,7 +24,7 @@ export default function VideoEditor() {
     try {
       const job = buildRenderJob(project, "mp4", { width: 1280, height: 720 }, 30)
       const output = await renderJob(job, fileMap)
-      const blob = new Blob([output], { type: "video/mp4" })
+      const blob = new Blob([output as BlobPart], { type: "video/mp4" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
@@ -40,68 +43,102 @@ export default function VideoEditor() {
     reader.onload = ev => {
       try {
         const loaded = loadProject(ev.target?.result as string)
-        // Replace the store project via undo trick — use direct store set instead
         useEditorStore.setState({ project: loaded })
       } catch (err) {
         alert(String(err))
       }
     }
     reader.readAsText(file)
-    // Reset input so the same file can be loaded again
     e.target.value = ""
   }
 
-  const btnStyle: React.CSSProperties = {
-    padding: "4px 12px",
-    cursor: "pointer",
-    fontSize: 13,
-    border: "1px solid #334155",
-    backgroundColor: "#1e293b",
-    color: "#e2e8f0",
-    borderRadius: 4,
+  function commitTitle() {
+    useEditorStore.setState(s => ({
+      project: { ...s.project, name: titleDraft.trim() || "Untitled Project" },
+    }))
+    setIsEditingTitle(false)
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", backgroundColor: "#020617" }}>
-      {/* Toolbar row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <Toolbar />
-        <div style={{ display: "flex", gap: 8, padding: "8px 0", marginLeft: 8 }}>
-          <button style={btnStyle} onClick={() => exportProjectJSON(project)}>
-            Export JSON
-          </button>
-          <button style={btnStyle} onClick={() => loadInputRef.current?.click()}>
-            Load JSON
-          </button>
+    <div className="flex flex-col h-screen overflow-hidden bg-dark text-accent-white font-sans">
+
+      {/* ── Topbar ── */}
+      <header className="flex items-center justify-between px-4 h-12 shrink-0 bg-dark-surface border-b border-dark-border">
+        {/* Editable project title */}
+        {isEditingTitle ? (
           <input
-            ref={loadInputRef}
-            type="file"
-            accept="application/json"
-            style={{ display: "none" }}
-            onChange={handleLoadFile}
+            autoFocus
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur() }}
+            className="bg-transparent text-sm font-bold text-accent-white border-b border-dark-border-light px-1 focus:outline-none w-48 cursor-text"
           />
+        ) : (
           <button
-            style={{ ...btnStyle, opacity: isRendering ? 0.5 : 1, cursor: isRendering ? "not-allowed" : "pointer" }}
-            disabled={isRendering}
-            onClick={handleRender}
+            onDoubleClick={() => { setTitleDraft(project.name); setIsEditingTitle(true) }}
+            className="text-sm font-bold text-accent-white hover:text-muted-light editor-transition tracking-wide truncate max-w-xs cursor-text"
+            title="Double-click to rename"
           >
-            {isRendering ? "Rendering..." : "Render MP4"}
+            {project.name}
           </button>
+        )}
+
+        {/* Global action buttons */}
+        <div className="flex items-center gap-1.5">
+          <IconButton
+            icon={<Settings2 />}
+            label="Load project"
+            variant="ghost"
+            onClick={() => loadInputRef.current?.click()}
+          />
+          <LabelButton
+            icon={<Save />}
+            label="Save"
+            variant="secondary"
+            size="sm"
+            onClick={() => exportProjectJSON(project)}
+          />
+          <LabelButton
+            icon={<Upload />}
+            label="Export"
+            variant="primary"
+            size="sm"
+            loading={isRendering}
+            onClick={handleRender}
+          />
+          <IconButton icon={<Share2 />} label="Share" variant="ghost" />
+        </div>
+      </header>
+
+      {/* ── Middle row: Media panel + Preview ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Left: media panel */}
+        <aside className="w-72 shrink-0 flex flex-col bg-dark-surface border-r border-dark-border overflow-hidden">
+          <MediaLibrary />
+        </aside>
+
+        {/* Center: preview player */}
+        <div className="flex flex-1 min-h-0 overflow-hidden bg-dark p-3">
+          <PreviewPlayer />
         </div>
       </div>
 
-      {/* Main content: MediaLibrary | PreviewPlayer | Timeline */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        <MediaLibrary />
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
-          {/* Top section: preview player */}
-          <div style={{ display: "flex", padding: 12, backgroundColor: "#0a0f1e", borderBottom: "1px solid #1e293b" }}>
-            <PreviewPlayer />
-          </div>
-          {/* Bottom section: timeline */}
-          <Timeline />
-        </div>
+      {/* ── Toolbar ── */}
+      <Toolbar />
+
+      {/* ── Timeline ── */}
+      <div className="flex flex-col shrink-0 overflow-hidden" style={{ height: 260 }}>
+        <Timeline />
       </div>
+
+      <input
+        ref={loadInputRef}
+        type="file"
+        accept="application/json"
+        className="hidden"
+        onChange={handleLoadFile}
+      />
     </div>
   )
 }
