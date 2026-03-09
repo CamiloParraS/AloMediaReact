@@ -1,11 +1,11 @@
 import type { Media } from "../../project/projectTypes"
 
-function formatMediaMeta(media: Media): string {
-  if (media.type === "image") return "image"
+function formatDuration(media: Media): string {
+  if (media.type === "image") return "img"
   const secs = Math.round(media.duration ?? 0)
   const m = Math.floor(secs / 60)
   const s = secs % 60
-  return `${media.type} · ${m}:${String(s).padStart(2, "0")}`
+  return `${m}:${String(s).padStart(2, "0")}`
 }
 
 function MediaThumbnail({ media, objectUrl }: { media: Media; objectUrl: string | undefined }) {
@@ -14,22 +14,24 @@ function MediaThumbnail({ media, objectUrl }: { media: Media; objectUrl: string 
       <video
         src={objectUrl}
         preload="metadata"
-        style={{ width: 48, height: 32, objectFit: "cover", flexShrink: 0 }}
+        className="absolute inset-0 w-full h-full object-cover"
         onLoadedMetadata={e => { (e.currentTarget as HTMLVideoElement).currentTime = 0 }}
       />
     )
   }
   if (media.type === "image") {
-    return <img src={objectUrl} alt="" style={{ width: 48, height: 32, objectFit: "cover", flexShrink: 0 }} />
+    return <img src={objectUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
   }
-  // audio: simple waveform SVG
+  // audio: centered waveform
   return (
-    <svg width="48" height="32" viewBox="0 0 48 32" style={{ flexShrink: 0 }}>
-      {[0, 1, 2, 3, 4, 5, 6].map(i => {
-        const h = i % 3 === 0 ? 20 : i % 3 === 1 ? 12 : 6
-        return <rect key={i} x={4 + i * 6} y={(32 - h) / 2} width={4} height={h} fill="#94a3b8" rx="1" />
-      })}
-    </svg>
+    <div className="absolute inset-0 flex items-center justify-center">
+      <svg width="48" height="28" viewBox="0 0 48 28">
+        {[0, 1, 2, 3, 4, 5, 6].map(i => {
+          const h = i % 3 === 0 ? 18 : i % 3 === 1 ? 10 : 5
+          return <rect key={i} x={4 + i * 6} y={(28 - h) / 2} width={4} height={h} fill="#8a8a9a" rx="1" />
+        })}
+      </svg>
+    </div>
   )
 }
 
@@ -38,27 +40,20 @@ export function MediaCard({ media, objectUrl, proxyStatus }: { media: Media; obj
     <div
       draggable
       onDragStart={e => e.dataTransfer.setData("mediaId", media.id)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 8px",
-        border: "1px solid #334155",
-        borderRadius: 4,
-        cursor: "grab",
-        fontSize: 13,
-        backgroundColor: "#0f172a",
-      }}
+      className="relative aspect-square rounded-lg border border-dark-border bg-dark-card hover:border-accent-red/70 hover:bg-dark-elevated cursor-pointer editor-transition overflow-hidden group"
     >
-      <MediaThumbnail media={media} objectUrl={objectUrl} />
-      <div style={{ overflow: "hidden", minWidth: 0 }}>
-        <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e2e8f0" }}>
-          {media.name}
-        </div>
-        <div style={{ color: "#94a3b8", fontSize: 11 }}>
-          {formatMediaMeta(media)}
-          {proxyStatus === 'pending' && <span style={{ marginLeft: 4, color: "#64748b" }}>proxy...</span>}
-          {proxyStatus === 'error' && <span style={{ marginLeft: 4, color: "#ef4444" }}>proxy failed</span>}
+      {/* Thumbnail — top ~75% */}
+      <div className="absolute inset-0 bottom-[26%] bg-dark overflow-hidden">
+        <MediaThumbnail media={media} objectUrl={objectUrl} />
+      </div>
+
+      {/* Info strip — bottom ~26% */}
+      <div className="absolute bottom-0 left-0 right-0 h-[26%] bg-dark-surface/90 px-1.5 flex flex-col justify-center gap-0.5">
+        <p className="text-[10px] font-medium text-accent-white truncate leading-none">{media.name}</p>
+        <div className="flex items-center gap-1">
+          <span className="text-[9px] text-muted leading-none">{formatDuration(media)}</span>
+          {proxyStatus === 'pending' && <span className="text-[9px] text-muted opacity-60 leading-none">proxy…</span>}
+          {proxyStatus === 'error' && <span className="text-[9px] text-red-400 leading-none">!</span>}
         </div>
       </div>
     </div>
@@ -67,34 +62,12 @@ export function MediaCard({ media, objectUrl, proxyStatus }: { media: Media; obj
 
 export function LoadingCard({ fileName }: { fileName: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 8px",
-        border: "1px solid #334155",
-        borderRadius: 4,
-        fontSize: 13,
-        backgroundColor: "#0f172a",
-      }}
-    >
-      <div
-        style={{
-          width: 20,
-          height: 20,
-          border: "2px solid #444",
-          borderTopColor: "#fff",
-          borderRadius: "50%",
-          animation: "spin 0.7s linear infinite",
-          flexShrink: 0,
-        }}
-      />
-      <div style={{ overflow: "hidden", minWidth: 0 }}>
-        <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e2e8f0" }}>
-          {fileName}
-        </div>
-        <div style={{ color: "#94a3b8", fontSize: 11 }}>Loading...</div>
+    <div className="relative aspect-square rounded-lg border border-dark-border bg-dark-card overflow-hidden">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-6 h-6 rounded-full border-2 border-dark-elevated border-t-accent-white animate-spin" />
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 h-[26%] bg-dark-surface/90 px-1.5 flex items-center">
+        <p className="text-[10px] font-medium text-muted truncate leading-none">{fileName}</p>
       </div>
     </div>
   )
