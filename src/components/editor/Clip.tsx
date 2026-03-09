@@ -20,6 +20,7 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
   const projectMedia = useEditorStore(s => s.project.media)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   function getClipLabel(): string {
     if (clip.type === "text") return clip.content || "Text"
@@ -40,11 +41,11 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
 
   const isAudio = clip.type === "audio"
   const bgColor = isAudio
-    ? (isSelected ? "#16a34a" : "#166534")
-    : (isSelected ? "#3b82f6" : "#6366f1")
+    ? (isSelected ? "var(--surface-clip-audio-selected)" : "var(--surface-clip-audio)")
+    : (isSelected ? "var(--surface-clip-video-selected)" : "var(--surface-clip-video)")
   const borderColor = isAudio
     ? (isSelected ? "#15803d" : "#14532d")
-    : (isSelected ? "#1d4ed8" : "#4338ca")
+    : (isSelected ? "#4338ca" : "#312e81")
 
   function handleResizeMouseDown(e: React.MouseEvent) {
     e.stopPropagation()
@@ -78,9 +79,11 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
     <>
       <div
         draggable
-        onDragStart={e => onDragStart(e, clip.id)}
+        onDragStart={e => { setIsDragging(true); onDragStart(e, clip.id) }}
+        onDragEnd={() => setIsDragging(false)}
         onClick={() => onSelect(clip.id)}
         onContextMenu={handleContextMenu}
+        className={`hover:brightness-110 transition-[filter,opacity] duration-150 ${isDragging ? "opacity-70" : ""}`}
         style={{
           position: "absolute",
           left,
@@ -90,31 +93,20 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
           backgroundColor: bgColor,
           border: `${isSelected ? 2 : 1}px solid ${borderColor}`,
           borderRadius: 4,
-          cursor: "grab",
+          cursor: isDragging ? "grabbing" : "grab",
           overflow: "hidden",
           boxSizing: "border-box",
           userSelect: "none",
+          boxShadow: "inset 0 2px 0 rgba(255,255,255,0.08)",
         }}
       >
-        <div style={{ padding: "2px 6px", fontSize: 11, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span style={{ fontSize: 11, padding: "0 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", lineHeight: "100%", color: "rgba(255,255,255,0.85)" }}>
           {getClipLabel()}
-        </div>
-
-        {(clip.type === "image" || clip.type === "text") && (
-          <div
-            onMouseDown={handleResizeMouseDown}
-            style={{
-              position: "absolute",
-              right: 0,
-              top: 0,
-              width: 8,
-              height: "100%",
-              cursor: "ew-resize",
-              backgroundColor: "rgba(255,255,255,0.18)",
-              zIndex: 2,
-            }}
-          />
-        )}
+        </span>
+        <div
+          onMouseDown={handleResizeMouseDown}
+          style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 8, cursor: "ew-resize" }}
+        />
       </div>
 
       {contextMenu && (
@@ -123,22 +115,22 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
             position: "fixed",
             top: contextMenu.y,
             left: contextMenu.x,
-            backgroundColor: "#1e293b",
-            border: "1px solid #334155",
-            borderRadius: 4,
+            backgroundColor: "var(--color-dark-card)",
+            border: "1px solid var(--color-dark-border)",
+            borderRadius: 6,
             zIndex: 100,
             minWidth: 160,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
           }}
         >
           <div
-            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "#e2e8f0" }}
+            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-accent-white)" }}
             onClick={e => { e.stopPropagation(); splitClip(clip.id, playhead); setContextMenu(null) }}
           >
             Split at playhead
           </div>
           <div
-            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "#f87171" }}
+            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-destructive-light)" }}
             onClick={e => { e.stopPropagation(); removeClip(clip.id); setContextMenu(null) }}
           >
             Remove clip
