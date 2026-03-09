@@ -1,10 +1,13 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import { SkipBack, Rewind, Play, Pause, FastForward, SkipForward, Volume2, VolumeX } from "lucide-react"
 import type { AudioClip, ImageClip, TextClip, Transform, VideoClip } from "../../project/projectTypes"
 import { useEditorStore } from "../../store/editorStore"
 import { fileMap } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
 import { getProjectDuration } from "../../utils/time"
 import { TransformOverlay } from "./TransformOverlay"
+import { IconButton } from "../ui/IconButton"
+import { RangeSlider } from "../ui/RangeSlider"
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -37,6 +40,21 @@ export function PreviewPlayer() {
   const { play, pause, seek } = usePlayer()
   const duration = getProjectDuration(project.tracks)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const [isMuted, setIsMuted] = useState(false)
+  const [volume, setVolume] = useState(1)
+  // Computed scale: inner 1280×720 canvas → container actual width
+  const [canvasScale, setCanvasScale] = useState(0.5)
+
+  // Keep canvasScale in sync with the container's rendered width
+  useEffect(() => {
+    const el = canvasContainerRef.current
+    if (!el) return
+    const update = () => setCanvasScale(el.clientWidth / 1280)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // Object URL registry — create once per mediaId, revoke on unmount
   const objectUrlsRef = useRef<Map<string, string>>(new Map())
@@ -124,7 +142,8 @@ export function PreviewPlayer() {
     }
   }, [isPlaying])
 
-  const sortedTracks = [...project.tracks].sort((a, b) => a.order - b.order)
+  // Render highest-order tracks first so track 0 (index 0) is painted last = on top
+  const sortedTracks = [...project.tracks].sort((a, b) => b.order - a.order)
 
   const activeClips = sortedTracks.flatMap(track =>
     track.clips.filter(
@@ -132,21 +151,10 @@ export function PreviewPlayer() {
     )
   )
 
-  const btnStyle: React.CSSProperties = {
-    padding: "4px 10px",
-    fontSize: 13,
-    cursor: "pointer",
-    border: "1px solid #334155",
-    backgroundColor: "#1e293b",
-    color: "#e2e8f0",
-    borderRadius: 4,
-  }
-
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     const rect = canvasContainerRef.current!.getBoundingClientRect()
     const mouseX = e.clientX - rect.left
     const mouseY = e.clientY - rect.top
-    // Convert 640x360 CSS pixels to 1280x720 canvas space
     const canvasX = mouseX / (rect.width / 1280)
     const canvasY = mouseY / (rect.height / 720)
 
@@ -165,134 +173,178 @@ export function PreviewPlayer() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
-    {/* Canvas shell — 640x360 (half of 1280x720) */}
-    <div
-      ref={canvasContainerRef}
-      onClick={handleCanvasClick}
-      style={{
-        position: "relative",
-        width: 640,
-        height: 360,
-        backgroundColor: "#000",
-        overflow: "hidden",
-        cursor: "default",
-      }}
-    >
-      {/* Inner canvas scaled 0.5 — all transforms are authored at 1280x720 */}
-      <div
-        style={{
-          position: "absolute",
-          width: 1280,
-          height: 720,
-          transform: "scale(0.5)",
-          transformOrigin: "0 0",
-          pointerEvents: selectedClipId ? "none" : undefined,
-        }}
-      >
-        {activeClips.map(clip => {
-          if (clip.type === "video") {
-            const url = getPlaybackUrl(clip.mediaId)
+    <div className="flex flex-col min-h-0 h-full w-full items-center">
+
+      {/* Canvas area — fills available height, maintains 16:9 */}
+      <div className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden">
+        <div
+          ref={canvasContainerRef}
+          onClick={handleCanvasClick}
+          className="relative bg-black overflow-hidden cursor-default"
+          style={{ aspectRatio: "16 / 9", height: "100%", maxWidth: "100%", width: "auto" }}
+        >
+          {/* Inner canvas at 1280×720 scaled to container */}
+          <div
+            style={{
+              position: "absolute",
+              width: 1280,
+              height: 720,
+              transform: `scale(${canvasScale})`,
+              transformOrigin: "0 0",
+              pointerEvents: selectedClipId ? "none" : undefined,
+            }}
+          >
+            {activeClips.map(clip => {
+              if (clip.type === "video") {
+                const url = getPlaybackUrl(clip.mediaId)
+                return (
+                  <video
+                    key={clip.id}
+                    ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
+                    src={url}
+                    style={applyTransform(clip.transform)}
+                    muted={isMuted}
+                    playsInline
+                  />
+                )
+              }
+
+              if (clip.type === "image") {
+                const url = getObjectUrl(clip.mediaId)
+                return (
+                  <img
+                    key={clip.id}
+                    src={url}
+                    style={applyTransform(clip.transform)}
+                    alt=""
+                  />
+                )
+              }
+
+              if (clip.type === "text") {
+                return (
+                  <div key={clip.id} style={applyTransform(clip.transform)}>
+                    {clip.content}
+                  </div>
+                )
+              }
+
+              if (clip.type === "audio") {
+                const url = getObjectUrl(clip.mediaId)
+                return (
+                  // eslint-disable-next-line jsx-a11y/media-has-caption
+                  <audio
+                    key={clip.id}
+                    ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
+                    src={url}
+                  />
+                )
+              }
+
+              return null
+            })}
+          </div>
+
+          {/* Transform overlay */}
+          {(() => {
+            if (!selectedClipId) return null
+            let selectedClip: VideoClip | ImageClip | TextClip | undefined
+            for (const track of project.tracks) {
+              const found = track.clips.find(c => c.id === selectedClipId)
+              if (found && found.type !== "audio") {
+                selectedClip = found as VideoClip | ImageClip | TextClip
+                break
+              }
+            }
+            if (!selectedClip) return null
             return (
-              <video
-                key={clip.id}
-                ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
-                src={url}
-                style={applyTransform(clip.transform)}
-                muted
-                playsInline
+              <TransformOverlay
+                clip={selectedClip}
+                previewWidth={canvasContainerRef.current?.clientWidth ?? 640}
+                previewHeight={canvasContainerRef.current?.clientHeight ?? 360}
+                onUpdate={t => updateClipTransform(selectedClipId, t)}
+                onCommit={() => commitTransform(selectedClipId)}
               />
             )
-          }
-
-          if (clip.type === "image") {
-            const url = getObjectUrl(clip.mediaId)
-            return (
-              <img
-                key={clip.id}
-                src={url}
-                style={applyTransform(clip.transform)}
-                alt=""
-              />
-            )
-          }
-
-          if (clip.type === "text") {
-            return (
-              <div key={clip.id} style={applyTransform(clip.transform)}>
-                {clip.content}
-              </div>
-            )
-          }
-
-          if (clip.type === "audio") {
-            const url = getObjectUrl(clip.mediaId)
-            return (
-              // eslint-disable-next-line jsx-a11y/media-has-caption
-              <audio
-                key={clip.id}
-                ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
-                src={url}
-              />
-            )
-          }
-
-          return null
-        })}
+          })()}
+        </div>
       </div>
 
-      {/* Transform overlay — shown when a visual clip is selected */}
-      {(() => {
-        if (!selectedClipId) return null
-        let selectedClip: VideoClip | ImageClip | TextClip | undefined
-        for (const track of project.tracks) {
-          const found = track.clips.find(c => c.id === selectedClipId)
-          if (found && found.type !== "audio") {
-            selectedClip = found as VideoClip | ImageClip | TextClip
-            break
-          }
-        }
-        if (!selectedClip) return null
-        return (
-          <TransformOverlay
-            clip={selectedClip}
-            previewWidth={canvasContainerRef.current?.clientWidth ?? 640}
-            previewHeight={canvasContainerRef.current?.clientHeight ?? 360}
-            onUpdate={t => updateClipTransform(selectedClipId, t)}
-            onCommit={() => commitTransform(selectedClipId)}
+      {/* Controls — fixed height row */}
+      <div className="w-full bg-dark-card border-t border-dark-border px-3 py-2 shrink-0">
+        {/* Seek bar */}
+        <RangeSlider
+          min={0}
+          max={duration || 1}
+          step={0.01}
+          value={playhead}
+          label="Seek"
+          onPointerDown={() => pause()}
+          onChange={seek}
+          className="mb-2"
+        />
+
+        {/* Buttons + timecode + volume */}
+        <div className="flex items-center gap-0.5 mt-1">
+          <IconButton
+            icon={<SkipBack />}
+            label="Skip to start"
+            size="sm"
+            onClick={() => seek(0)}
           />
-        )
-      })()}
-    </div>
+          <IconButton
+            icon={<Rewind />}
+            label="Rewind 10s"
+            size="sm"
+            onClick={() => seek(Math.max(0, playhead - 10))}
+          />
+          <IconButton
+            icon={isPlaying ? <Pause /> : <Play />}
+            label={isPlaying ? "Pause" : "Play"}
+            size="lg"
+            variant="solid"
+            onClick={() => (isPlaying ? pause() : play())}
+          />
+          <IconButton
+            icon={<FastForward />}
+            label="Fast forward 10s"
+            size="sm"
+            onClick={() => seek(Math.min(duration, playhead + 10))}
+          />
+          <IconButton
+            icon={<SkipForward />}
+            label="Skip to end"
+            size="sm"
+            onClick={() => seek(duration)}
+          />
 
-    {/* Inline controls */}
-    <div style={{ width: 640, backgroundColor: "#0f172a", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6, boxSizing: "border-box" }}>
-      {/* Buttons row */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button style={btnStyle} onClick={() => seek(Math.max(0, playhead - 10))}>-10s</button>
-        <button style={btnStyle} onClick={() => isPlaying ? pause() : play()}>
-          {isPlaying ? "\u23F8" : "\u25B6"}
-        </button>
-        <button style={btnStyle} onClick={() => seek(Math.min(duration, playhead + 10))}>+10s</button>
+          {/* Timecode */}
+          <span
+            className="flex-1 text-center font-mono text-xs text-muted tabular-nums"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {formatTime(playhead)} / {formatTime(duration)}
+          </span>
+
+          {/* Volume */}
+          <IconButton
+            icon={isMuted ? <VolumeX /> : <Volume2 />}
+            label={isMuted ? "Unmute" : "Mute"}
+            size="sm"
+            onClick={() => setIsMuted(v => !v)}
+          />
+          <RangeSlider
+            min={0}
+            max={100}
+            step={1}
+            value={isMuted ? 0 : Math.round(volume * 100)}
+            label="Volume"
+            onChange={v => { setVolume(v / 100); setIsMuted(false) }}
+            className="w-20"
+          />
+        </div>
       </div>
-
-      {/* Seek bar */}
-      <input
-        type="range"
-        min={0}
-        max={duration || 1}
-        step={0.01}
-        value={playhead}
-        onChange={e => seek(Number(e.target.value))}
-        style={{ width: "100%" }}
-      />
-
-      {/* Time display */}
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
-        <span>{formatTime(playhead)}</span>
-        <span>{formatTime(duration)}</span>
-      </div>
-    </div>
     </div>
   )
 }
