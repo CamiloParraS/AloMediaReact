@@ -2,10 +2,19 @@ import { useRef } from "react"
 import { useEditorStore } from "../store/editorStore"
 import { getProjectDuration } from "../utils/time"
 
+/** Returns true when there is no video clip covering the given time (a "gap"). */
+function isInGap(time: number): boolean {
+  const { project } = useEditorStore.getState()
+  const videoTracks = project.tracks.filter(t => t.type === "video")
+  if (videoTracks.length === 0) return false
+  const allClips = videoTracks.flatMap(t => t.clips)
+  if (allClips.length === 0) return false
+  return !allClips.some(c => c.timelineStart <= time && time < c.timelineEnd)
+}
+
 export function usePlayer() {
   const setPlayhead = useEditorStore(s => s.setPlayhead)
   const isPlaying = useEditorStore(s => s.isPlaying)
-  const setIsPlaying = useEditorStore(s => s.setIsPlaying)
 
   const rafRef = useRef<number | undefined>(undefined)
   // Single reference point — reset on play() start and every seek() call.
@@ -28,6 +37,13 @@ export function usePlayer() {
 
       if (newPlayhead >= duration) {
         useEditorStore.getState().setPlayhead(duration)
+        useEditorStore.getState().setIsPlaying(false)
+        return
+      }
+
+      // Stop playback when the playhead enters a gap (no video clip at this time)
+      if (isInGap(newPlayhead)) {
+        useEditorStore.getState().setPlayhead(newPlayhead)
         useEditorStore.getState().setIsPlaying(false)
         return
       }
