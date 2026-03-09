@@ -173,7 +173,7 @@ export function PreviewPlayer() {
   }
 
   return (
-    <div className="flex flex-col min-h-0 h-full w-full items-center">
+    <div className="flex flex-col min-h-0 h-full w-full items-center justify-center">
 
       {/* Canvas area — fills available height, maintains 16:9 */}
       <div className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden">

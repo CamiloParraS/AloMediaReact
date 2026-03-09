@@ -119,7 +119,7 @@ export default function VideoEditor() {
         </aside>
 
         {/* Center: preview player */}
-        <div className="flex flex-1 min-h-0 overflow-hidden bg-dark p-3">
+        <div className="flex flex-1 min-h-0 overflow-hidden bg-dark">
           <PreviewPlayer />
         </div>
       </div>
