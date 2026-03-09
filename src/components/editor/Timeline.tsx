@@ -1,5 +1,6 @@
 import type { DragEvent } from "react"
 import { useRef } from "react"
+import { Plus, Film, Music } from "lucide-react"
 import { useEditorStore } from "../../store/editorStore"
 import { useTimeline } from "../../hooks/useTimeline"
 import { getProjectDuration, timeToPx, pxToTime, TRACK_HEADER_WIDTH } from "../../utils/time"
@@ -7,6 +8,8 @@ import { generateId } from "../../utils/id"
 import type { Clip, Transform } from "../../project/projectTypes"
 import { TrackComponent } from "./Track"
 import { PlayheadBar } from "./PlayheadBar"
+import { LabelButton } from "../ui/LabelButton"
+import { Dropdown } from "../ui/Dropdown"
 
 const DEFAULT_TRANSFORM: Transform = { x: 0, y: 0, width: 1280, height: 720, rotation: 0 }
 
@@ -14,10 +17,17 @@ export function Timeline() {
   const project = useEditorStore(s => s.project)
   const playhead = useEditorStore(s => s.playhead)
   const timelineScale = useEditorStore(s => s.timelineScale)
+  const setTimelineScale = useEditorStore(s => s.setTimelineScale)
   const addClip = useEditorStore(s => s.addClip)
   const moveClip = useEditorStore(s => s.moveClip)
   const addTrack = useEditorStore(s => s.addTrack)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const factor = e.deltaY > 0 ? 0.9 : 1.1
+    setTimelineScale(timelineScale * factor)
+  }
 
   const { xToTime, hasCollision, resolveDropPosition, dragOverTrackId, setDragOverTrack } = useTimeline()
 
@@ -107,27 +117,13 @@ export function Timeline() {
 
   const totalWidth = timeToPx(rulerDuration, timelineScale)
 
-  const addTrackBtnStyle: React.CSSProperties = {
-    padding: "4px 10px",
-    fontSize: 12,
-    cursor: "pointer",
-    border: "1px solid #334155",
-    backgroundColor: "#1e293b",
-    color: "#94a3b8",
-    borderRadius: 4,
-  }
-
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", backgroundColor: "#020617", overflow: "hidden" }}>
+    <div className="flex flex-1 flex-col bg-dark overflow-hidden">
       {/* Scrollable timeline area */}
       <div
         ref={containerRef}
-        style={{
-          flex: 1,
-          overflowX: "auto",
-          overflowY: "auto",
-          position: "relative",
-        }}
+        className="flex-1 overflow-x-auto overflow-y-auto relative"
+        onWheel={handleWheel}
       >
         {/* Inner container sized to timeline duration */}
         <div style={{ minWidth: totalWidth, position: "relative", display: "flex", flexDirection: "column" }}>
@@ -142,7 +138,7 @@ export function Timeline() {
               left: TRACK_HEADER_WIDTH + timeToPx(playhead, timelineScale),
               width: 2,
               height: "100%",
-              backgroundColor: "#ef4444",
+              backgroundColor: "var(--color-accent-red)",
               pointerEvents: "none",
               zIndex: 10,
             }}
@@ -163,11 +159,22 @@ export function Timeline() {
         </div>
       </div>
 
-      {/* Add track buttons */}
-      <div style={{ display: "flex", gap: 6, padding: "6px 8px", borderTop: "1px solid #1e293b", flexShrink: 0, backgroundColor: "#020617" }}>
-        <button onClick={() => addTrack("video")} style={addTrackBtnStyle}>+ Video Track</button>
-        <button onClick={() => addTrack("overlay")} style={addTrackBtnStyle}>+ Overlay Track</button>
-        <button onClick={() => addTrack("audio")} style={addTrackBtnStyle}>+ Audio Track</button>
+      {/* Add track row */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-dark-border bg-dark-surface shrink-0">
+        <Dropdown
+          trigger={
+            <LabelButton
+              icon={<Plus />}
+              label="Add Track"
+              variant="ghost"
+              size="sm"
+            />
+          }
+          items={[
+            { label: "Video Track", icon: <Film />, onClick: () => addTrack("video") },
+            { label: "Audio Track", icon: <Music />, onClick: () => addTrack("audio") },
+          ]}
+        />
       </div>
     </div>
   )
