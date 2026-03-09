@@ -1,8 +1,10 @@
 import { useState, type DragEvent } from "react"
+import { Eye, EyeOff, Lock, Unlock, Trash2 } from "lucide-react"
 import type { MediaType, Track, TrackType } from "../../project/projectTypes"
 import { ClipComponent } from "./Clip"
 import { useEditorStore } from "../../store/editorStore"
 import { pxToTime, timeToPx, TRACK_HEADER_WIDTH } from "../../utils/time"
+import { IconButton } from "../ui/IconButton"
 
 interface TrackProps {
   track: Track
@@ -13,7 +15,7 @@ interface TrackProps {
   resolveDropPosition: (trackId: string, rawStart: number, clipDuration: number, excludeClipId?: string) => number
 }
 
-const TYPE_LETTER: Record<string, string> = { video: 'V', audio: 'A', overlay: 'O' }
+const TYPE_LABEL: Record<string, string> = { video: 'Video', audio: 'Audio' }
 
 export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDrop, onClipDrop, resolveDropPosition }: TrackProps) {
   const selectedClipId = useEditorStore(s => s.selectedClipId)
@@ -26,18 +28,20 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
 
   const sameTypeTracks = allTracks.filter(t => t.type === track.type)
   const trackIndex = sameTypeTracks.findIndex(t => t.id === track.id)
-  const letter = TYPE_LETTER[track.type] ?? track.type[0].toUpperCase()
-  const trackLabel = sameTypeTracks.length > 1 ? `${letter}${trackIndex + 1}` : letter
+  const baseLabel = TYPE_LABEL[track.type] ?? track.type
+  const trackLabel = sameTypeTracks.length > 1 ? `${baseLabel} ${trackIndex + 1}` : baseLabel
   const canRemove = sameTypeTracks.length > 1
 
   const [snapIndicatorX, setSnapIndicatorX] = useState<number | null>(null)
   const [reorderOver, setReorderOver] = useState(false)
+  const [isVisible, setIsVisible] = useState(true)
+  const [isLocked, setIsLocked] = useState(false)
 
   const isOver = dragOverTrackId === track.id
 
   function isCompatibleDrop(mediaType: MediaType, trackType: TrackType): boolean {
     if (mediaType === "audio") return trackType === "audio"
-    return trackType === "video" || trackType === "overlay"
+    return trackType === "video"
   }
 
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
@@ -100,6 +104,7 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
 
   return (
     <div
+      className="group"
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -107,15 +112,15 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
       style={{
         display: "flex",
         height: 60,
-        backgroundColor: isOver ? "#1e293b" : "#0f172a",
-        borderBottom: "1px solid #1e293b",
-        borderTop: reorderOver ? "2px solid #3b82f6" : undefined,
+        backgroundColor: isOver ? "var(--color-dark-elevated)" : "var(--color-dark-surface)",
+        borderBottom: "1px solid var(--color-dark-border)",
+        borderTop: reorderOver ? "2px solid var(--color-info)" : undefined,
         minWidth: "100%",
         boxSizing: "border-box",
         overflow: "hidden",
       }}
     >
-      {/* Track header — sticky to the left edge of the scroll container */}
+      {/* Track header — sticky left */}
       <div
         style={{
           position: "sticky",
@@ -124,38 +129,58 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
           width: TRACK_HEADER_WIDTH,
           flexShrink: 0,
           height: "100%",
-          backgroundColor: isOver ? "#1e293b" : "#0f172a",
-          borderRight: "1px solid #1e293b",
+          backgroundColor: isOver ? "var(--color-dark-elevated)" : "var(--color-dark-card)",
+          borderRight: "1px solid var(--color-dark-border)",
           display: "flex",
-          flexDirection: "column",
           alignItems: "center",
-          justifyContent: "center",
-          gap: 2,
+          justifyContent: "space-between",
+          padding: "0 6px",
           boxSizing: "border-box",
+          gap: 2,
         }}
       >
-        {/* Reorder drag handle */}
-        <div
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('reorderTrackId', track.id)
-            e.dataTransfer.effectAllowed = 'move'
-          }}
-          style={{ cursor: 'grab', fontSize: 10, textAlign: 'center', color: '#64748b', lineHeight: 1 }}
-        >
-          ⠿
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8" }}>
-          {trackLabel}
-        </span>
-        {canRemove && (
-          <button
-            onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
-            style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 12, padding: "1px 3px", lineHeight: 1 }}
+        {/* Drag handle + label */}
+        <div className="flex items-center gap-1 min-w-0">
+          <div
+            draggable
+            onDragStart={e => {
+              e.dataTransfer.setData('reorderTrackId', track.id)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            className="cursor-grab text-muted opacity-50 hover:opacity-100 text-xs leading-none select-none shrink-0"
           >
-            ×
-          </button>
-        )}
+            ⠿
+          </div>
+          <span className="text-xs font-semibold text-muted-light truncate">{trackLabel}</span>
+        </div>
+
+        {/* Track action icons */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <IconButton
+            icon={isVisible ? <Eye /> : <EyeOff />}
+            label={isVisible ? "Hide track" : "Show track"}
+            size="sm"
+            active={!isVisible}
+            onClick={() => setIsVisible(v => !v)}
+          />
+          <IconButton
+            icon={isLocked ? <Lock /> : <Unlock />}
+            label={isLocked ? "Unlock track" : "Lock track"}
+            size="sm"
+            active={isLocked}
+            onClick={() => setIsLocked(v => !v)}
+          />
+          {canRemove && (
+            <IconButton
+              icon={<Trash2 />}
+              label="Delete track"
+              size="sm"
+              variant="danger"
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Clips area — coordinate origin for all clip positions */}
@@ -176,7 +201,7 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
               top: 0,
               width: 2,
               height: "100%",
-              backgroundColor: "#facc15",
+              backgroundColor: "var(--color-warning)",
               pointerEvents: "none",
               zIndex: 5,
             }}
