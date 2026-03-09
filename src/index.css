@@ -139,3 +139,128 @@ select:focus {
   pointer-events: none;
   border-radius: inherit;
 }
+
+/* ------------------------------------------------------------------ */
+/* Editor design tokens                                                  */
+/* ------------------------------------------------------------------ */
+:root {
+  /* Accent shorthand & destructive */
+  --color-accent: var(--color-accent-red);
+  --color-destructive: #7f1d1d;
+  --color-destructive-light: #f87171;
+  --color-info: #3b82f6;
+  --color-warning: #facc15;
+  --border-color: var(--color-dark-border);
+
+  /* Editor surface layers */
+  --surface-editor: var(--color-dark);
+  --surface-panel: var(--color-dark-surface);
+  --surface-track: var(--color-dark-elevated);
+  --surface-ruler: #070711;
+  --surface-clip-video: #2e2b5c;
+  --surface-clip-video-selected: #4338ca;
+  --surface-clip-audio: #14532d;
+  --surface-clip-audio-selected: #15803d;
+
+  /* Ruler tick colors */
+  --color-ruler-tick-major: var(--color-dark-border-light);
+  --color-ruler-tick-minor: var(--color-dark-elevated);
+  --color-ruler-label: var(--color-muted);
+
+  /* Range input sizing */
+  --thumb-size: 14px;
+  --track-height: 4px;
+  --track-height-hover: 6px;
+
+  /* Animation timing */
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-slow: 250ms;
+  --ease-snap: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Editor-wide transition utility — applied to all interactive editor elements */
+.editor-transition {
+  transition:
+    color var(--duration-base) var(--ease-snap),
+    background-color var(--duration-base) var(--ease-snap),
+    border-color var(--duration-base) var(--ease-snap),
+    opacity var(--duration-base) var(--ease-snap),
+    transform var(--duration-fast) var(--ease-snap),
+    filter var(--duration-base) var(--ease-snap),
+    box-shadow var(--duration-base) var(--ease-snap);
+}
+
+/* Dropdown enter animation */
+@keyframes dropdown-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.dropdown-enter {
+  animation: dropdown-enter var(--duration-base) var(--ease-snap) both;
+}
+
+/* ------------------------------------------------------------------ */
+/* Range input — editor-range class                                     */
+/* Apply this class to every <input type="range"> in the editor.        */
+/* ------------------------------------------------------------------ */
+input[type='range'].editor-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+
+input[type='range'].editor-range::-webkit-slider-runnable-track {
+  height: var(--track-height);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--range-fill, 0%),
+    var(--color-dark-elevated) var(--range-fill, 0%)
+  );
+  border-radius: 9999px;
+  transition: height var(--duration-base) var(--ease-snap);
+}
+
+input[type='range'].editor-range:hover::-webkit-slider-runnable-track {
+  height: var(--track-height-hover);
+}
+
+input[type='range'].editor-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 50%;
+  background: var(--color-accent);
+  margin-top: calc((var(--track-height) - var(--thumb-size)) / 2);
+  transition:
+    transform var(--duration-fast) var(--ease-snap),
+    box-shadow var(--duration-fast) var(--ease-snap);
+}
+
+input[type='range'].editor-range::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+/* Firefox */
+input[type='range'].editor-range::-moz-range-track {
+  height: var(--track-height);
+  background: var(--color-dark-elevated);
+  border-radius: 9999px;
+}
+
+input[type='range'].editor-range::-moz-range-progress {
+  background: var(--color-accent);
+  height: var(--track-height);
+  border-radius: 9999px;
+}
+
+input[type='range'].editor-range::-moz-range-thumb {
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border: none;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
