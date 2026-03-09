@@ -1,5 +1,7 @@
 import { create } from "zustand"
 import { generateId } from "../utils/id"
+import { TIMELINE_ZOOM } from "../constants/timeline"
+import { getInsertionIndex } from "../utils/tracks"
 import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType } from "../project/projectTypes"
 
 export interface ProxyState {
@@ -83,7 +85,7 @@ function detectMediaType(file: File): MediaType {
 export const useEditorStore = create<EditorStore>((set, get) => ({
   project: makeInitialProject(),
   playhead: 0,
-  timelineScale: 50,
+  timelineScale: TIMELINE_ZOOM.DEFAULT,
   isPlaying: false,
   history: [],
   historyIndex: -1,
@@ -196,19 +198,27 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   addTrack(type: TrackType): Track {
     get().pushHistory("Add track")
+    const sorted = get().project.tracks.slice().sort((a, b) => a.order - b.order)
+    const insertIdx = getInsertionIndex(sorted, type)
     const newTrack: Track = {
       id: generateId(),
       type,
-      order: get().project.tracks.length,
+      order: insertIdx,
       clips: [],
     }
+    // Insert at correct position and reassign all order values
+    const withNew = [
+      ...sorted.slice(0, insertIdx),
+      newTrack,
+      ...sorted.slice(insertIdx),
+    ].map((t, i) => ({ ...t, order: i }))
     set(state => ({
       project: {
         ...state.project,
-        tracks: [...state.project.tracks, newTrack],
+        tracks: withNew,
       },
     }))
-    return newTrack
+    return withNew[insertIdx]
   },
 
   removeTrack(trackId: string): void {
@@ -333,7 +343,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setTimelineScale(scale: number): void {
-    set({ timelineScale: scale })
+    set({ timelineScale: Math.min(TIMELINE_ZOOM.MAX, Math.max(TIMELINE_ZOOM.MIN, scale)) })
   },
 
   setSelectedClip(clipId: string | undefined): void {
@@ -345,6 +355,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   pushHistory(description: string): void {
+    // Pause playback on any timeline mutation so preview and playhead stay in sync
+    set({ isPlaying: false })
     const state = get()
     const snapshot = deepClone(state.project)
     const newHistory = state.history.slice(0, state.historyIndex + 1)
