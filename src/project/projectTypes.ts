@@ -1,5 +1,5 @@
 export type MediaType = "video" | "audio" | "image"
-export type TrackType = "video" | "audio" | "overlay"
+export type TrackType = "video" | "audio"
 
 export interface Media {
   id: string
