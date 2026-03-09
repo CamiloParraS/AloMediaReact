@@ -1,7 +1,8 @@
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import { useEditorStore } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
 import { getProjectDuration, timeToPx, pxToTime, TRACK_HEADER_WIDTH } from "../../utils/time"
+import { TIMELINE_ZOOM } from "../../constants/timeline"
 
 function getTickInterval(pxPerSecond: number): { major: number; minor: number } {
   if (pxPerSecond >= 100) return { major: 1,   minor: 0.5  }
@@ -27,8 +28,10 @@ interface PlayheadBarProps {
 export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
   const playhead = useEditorStore(s => s.playhead)
   const timelineScale = useEditorStore(s => s.timelineScale)
+  const setTimelineScale = useEditorStore(s => s.setTimelineScale)
   const tracks = useEditorStore(s => s.project.tracks)
   const { seek, pause } = usePlayer()
+  const [isDraggingZoom, setIsDraggingZoom] = useState(false)
 
   const rulerRef = useRef<HTMLDivElement>(null)
   const duration = getProjectDuration(tracks)
@@ -42,6 +45,7 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
     const t = i * minor
     return { t, isMajor: t % major < 0.0001 }
   })
+
   function timeFromClientX(clientX: number): number {
     if (!rulerRef.current) return 0
     const rect = rulerRef.current.getBoundingClientRect()
@@ -51,18 +55,48 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
   function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
     e.preventDefault()
     if (useEditorStore.getState().isPlaying) pause()
-    seek(timeFromClientX(e.clientX))
+
+    const startX = e.clientX
+    let lastX = e.clientX
+    let mode: "unknown" | "seek" | "zoom" = "unknown"
 
     function onMove(ev: MouseEvent) {
-      seek(timeFromClientX(ev.clientX))
+      const dx = ev.clientX - startX
+
+      // Disambiguate on first significant horizontal movement
+      if (mode === "unknown") {
+        if (Math.abs(dx) > 4) {
+          mode = "zoom"
+          setIsDraggingZoom(true)
+        } else {
+          // Small delta — treat as seek
+          mode = "seek"
+        }
+      }
+
+      if (mode === "zoom") {
+        const delta = ev.clientX - lastX
+        const currentScale = useEditorStore.getState().timelineScale
+        // drag right = zoom out (smaller scale), drag left = zoom in (larger scale)
+        const newScale = currentScale * (1 - delta * 0.005)
+        setTimelineScale(Math.min(TIMELINE_ZOOM.MAX, Math.max(TIMELINE_ZOOM.MIN, newScale)))
+      } else if (mode === "seek") {
+        seek(timeFromClientX(ev.clientX))
+      }
+
+      lastX = ev.clientX
     }
 
-    function onUp() {
+    function onUp(ev: MouseEvent) {
       document.removeEventListener("mousemove", onMove)
       document.removeEventListener("mouseup", onUp)
+      setIsDraggingZoom(false)
+      // If no drag occurred, treat as a click-seek
+      if (mode === "unknown") {
+        seek(timeFromClientX(ev.clientX))
+      }
     }
 
-    // Attach to document so the drag continues even if the mouse leaves the ruler
     document.addEventListener("mousemove", onMove)
     document.addEventListener("mouseup", onUp)
   }
@@ -77,11 +111,11 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
         zIndex: 10,
         height: 28,
         minWidth: totalWidth,
-        borderBottom: "1px solid #1e293b",
-        cursor: "pointer",
+        borderBottom: "1px solid var(--color-dark-elevated)",
+        cursor: isDraggingZoom ? "ew-resize" : "pointer",
         userSelect: "none",
         flexShrink: 0,
-        backgroundColor: "#020617",
+        backgroundColor: "var(--surface-ruler)",
       }}
     >
       {ticks.map(({ t, isMajor }) => (
@@ -97,9 +131,9 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
             pointerEvents: "none",
           }}
         >
-          <div style={{ width: 1, height: isMajor ? 10 : 5, backgroundColor: isMajor ? "#475569" : "#1e293b" }} />
+          <div style={{ width: 1, height: isMajor ? 10 : 5, backgroundColor: isMajor ? "var(--color-ruler-tick-major)" : "var(--color-ruler-tick-minor)" }} />
           {isMajor && (
-            <span style={{ fontSize: 10, color: "#64748b", marginLeft: 2 }}>
+            <span style={{ fontSize: 10, color: "var(--color-ruler-label)", marginLeft: 2 }}>
               {formatTickLabel(t, major)}
             </span>
           )}
@@ -114,7 +148,7 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
           top: 8,
           width: 12,
           height: 12,
-          backgroundColor: "#ef4444",
+          backgroundColor: "var(--color-accent-red)",
           borderRadius: "50%",
           cursor: "ew-resize",
           zIndex: 20,
