@@ -198,10 +198,11 @@ This is the main export function. It takes a `RenderJob` object (described in th
 
 1. Writes all required input files into FFmpeg's **virtual filesystem** using `ffmpeg.writeFile()`.
 2. Trims each video segment to its designated `mediaStart`/`mediaEnd` range using `-ss` and `-to` flags with `-c copy` to avoid re-encoding.
-3. If there are multiple video segments, concatenates them using FFmpeg's `concat` demuxer by writing a text manifest file and running a concat pass.
-4. Handles audio segments by running them through a `volume` filter chain and then an `amix` filter to blend multiple audio tracks together.
-5. Combines the video track and mixed audio track in a final mux pass.
-6. Reads the output file from the virtual filesystem and returns it as a `Uint8Array`.
+3. For a **single-track** timeline with multiple video segments, concatenates them using FFmpeg's `concat` demuxer by writing a text manifest file and running a concat pass.
+4. For a **multi-track** timeline (segments spanning different tracks), composites all video segments using a chain of `overlay` filters on top of a black base canvas (`color` source). Each trimmed segment is shifted to its `timelineStart` position using `-itsoffset` and scaled to its transform dimensions. Segments are overlaid in z-order: the background track (highest `trackOrder`) is laid down first, and the foreground track (lowest `trackOrder`) last, so the topmost track visually wins when clips overlap.
+5. Handles audio segments by running them through a `volume` filter chain and then an `amix` filter to blend multiple audio tracks together.
+6. Combines the video track (or composited result) and mixed audio track in a final mux pass.
+7. Reads the output file from the virtual filesystem and returns it as a `Uint8Array`.
 
 ### `generateProxy(mediaId, file, onReady, onError)`
 
@@ -363,9 +364,9 @@ Rendering is the process of mixing all tracks and clips together into a single o
 
 ### Render Pipeline (`renderPipeline.ts`)
 
-Before FFmpeg is involved, the project data must be converted into a flat, ordered list of segments. The `buildRenderJob` function iterates over every track and every clip, converts each one to a `RenderSegment` using `clipToSegment`, and sorts all segments by their `timelineStart` time. The result is a `RenderJob` object that also carries the desired output format (`mp4` or `webm`), resolution, and frame rate.
+Before FFmpeg is involved, the project data must be converted into a flat, ordered list of segments. The `buildRenderJob` function iterates over every track and every clip, converts each one to a `RenderSegment` using `clipToSegment`, attaches the parent track's `order` value as `trackOrder`, and sorts all segments by their `timelineStart` time. The result is a `RenderJob` object that also carries the desired output format (`mp4` or `webm`), resolution, and frame rate.
 
-A `RenderSegment` is a simplified, denormalized view of a clip that contains only the fields FFmpeg needs: which file to read, what time range to use, where to place it on the timeline, and any transform or volume settings. The render pipeline deliberately does not know about tracks — it works on a flattened stream of segments.
+A `RenderSegment` is a simplified, denormalized view of a clip that contains only the fields FFmpeg needs: which file to read, what time range to use, where to place it on the timeline, any transform or volume settings, and the `trackOrder` for z-order compositing. Each segment carries its track's rendering priority so the FFmpeg engine can composite them correctly.
 
 ### FFmpeg Render (`ffmpegEngine.ts`)
 
@@ -375,11 +376,19 @@ The `renderJob` function receives the `RenderJob` and the `fileMap` and orchestr
 
 **Step 2 — Trim video segments.** Each video segment is trimmed to its `mediaStart`/`mediaEnd` range and written to a temporary file. The `-c copy` flag skips re-encoding, making this step very fast.
 
-**Step 3 — Concatenate video.** If there are multiple video segments, a concat manifest is written and FFmpeg merges them into a single video track file. A single segment skips this step.
+**Step 3 — Composite or concatenate video.** The engine detects whether the timeline is single-track or multi-track by inspecting the unique `trackOrder` values across all video segments.
 
-**Step 4 — Mix audio.** Each audio segment is given a `volume` filter. All processed audio streams are then combined using FFmpeg's `amix` filter, which mixes multiple audio inputs into one stream.
+- **Single-track:** If all video segments belong to the same track and there are multiple segments, they are concatenated using FFmpeg's `concat` demuxer (same behavior as before — fast, no re-encoding).
+- **Multi-track:** If segments span different tracks, the engine builds an overlay compositing pipeline:
+  1. A black base canvas is generated using a `color=c=black:s=WxH:d=DURATION:r=FPS` lavfi source.
+  2. Each trimmed segment is fed as a separate input with `-itsoffset` set to its `timelineStart`, so the video appears at the correct position in the timeline.
+  3. Segments are sorted by `trackOrder` descending (background first). An `overlay` filter chain is built where each segment is overlaid in z-order — background clips first, foreground clips last — so the topmost track visually wins when clips overlap in time.
+  4. If a segment's transform dimensions differ from the output resolution, a `scale` filter resizes it before the overlay. The clip's transform `x` and `y` values are used as the overlay position.
+  5. The composited result is encoded with `libx264` (the overlay filter requires re-encoding).
 
-**Step 5 — Mux output.** The video track and the mixed audio track are combined into the final output file. The video is stream-copied without re-encoding; the audio is encoded to AAC.
+**Step 4 — Mix audio.** Each audio segment is given a `volume` filter. All processed audio streams are then combined using FFmpeg's `amix` filter, which mixes multiple audio inputs into one stream. Audio segments from all tracks are collected.
+
+**Step 5 — Mux output.** The video track (or composited result) and the mixed audio track are combined into the final output file. For single-track pipelines the video is stream-copied; for multi-track pipelines the video is already encoded by the overlay step. Audio is encoded to AAC.
 
 **Step 6 — Return.** The output file is read from the virtual filesystem and returned as a raw `Uint8Array`.
 
@@ -508,9 +517,26 @@ The `onLoadedMetadata` handler on each `<video>` and `<audio>` element covers th
 
 ### Gap Behavior
 
-The playback loop (`usePlayer.ts`) calls `isInGap` on every RAF frame. If the playhead enters a region where no video track has a clip, `isInGap` returns `true` and the loop stops, setting `isPlaying = false`. This is intentional — the preview cannot show video where no video clip exists.
+The playback loop (`usePlayer.ts`) calls `isInGap` on every RAF frame. The function scans **all video tracks** using `flatMap` — a gap only exists when **no** video track has a clip covering the current playhead position. If `isInGap` returns `true`, the loop stops and sets `isPlaying = false`. This is intentional — the preview cannot show video where no video clip exists on any track.
 
 With epsilon, `isInGap` uses `time < clip.timelineEnd + CLIP_EPSILON` on the right edge so that the playhead overrunning a boundary by a sub-millisecond float error does not falsely stop playback. A real gap (any gap larger than `CLIP_EPSILON`) still stops playback correctly.
+
+---
+
+### Multi-Track Video Compositing
+
+The preview player supports **simultaneous display of video clips from multiple tracks**. When clips from different video tracks overlap in time, all of them are rendered as separate `<video>` elements layered with CSS `z-index` derived from the track's `order` value.
+
+**Primary vs. secondary clips:** The `VideoBufferManager` double-buffer handles the **primary** video clip — the one from the track with the lowest `order` value (topmost / foreground), as resolved by `getActiveVideoClip`. All other active video clips from other tracks are rendered as **secondary** `<video>` elements directly in the PreviewPlayer JSX.
+
+**Z-index scheme:** The formula `maxOrder - track.order + 1` is applied to all visual elements (video, image, text). Lower `order` values produce higher z-index values, so the topmost track in the timeline UI renders in front. The double-buffer elements receive the z-index of the primary clip's track. Static elements (images, text) also carry z-index from their parent track.
+
+**Secondary video sync:** Secondary video elements are synchronized by `useMediaSync`'s per-frame RAF callback. On each frame:
+1. For each secondary clip, `currentTime` is set to `clip.mediaStart + (playhead - clip.timelineStart)`.
+2. During playback, drift correction is applied: if the element's time drifts beyond `DRIFT_CORRECTION_THRESHOLD_S`, a corrective seek is issued.
+3. Secondary elements are muted — audio is handled by the separate audio pool.
+
+**Secondary element lifecycle:** Secondary `<video>` elements are keyed by `clip.mediaId` in the JSX and use `ref` callbacks to register/unregister themselves in a shared `Map<string, HTMLVideoElement>` ref. Their `src` is set to the proxy-aware playback URL (`getPlaybackUrl`) for smooth scrubbing. They mount when a clip enters the epsilon active window and unmount when it leaves.
 
 ---
 
