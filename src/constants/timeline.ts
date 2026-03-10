@@ -6,7 +6,7 @@ export const TIMELINE_ZOOM = {
 } as const
 
 /** How many milliseconds before the current clip ends to trigger buffer preparation. */
-export const PRELOAD_LOOKAHEAD_MS = 200
+export const PRELOAD_LOOKAHEAD_MS = 1500
 
 /** Minimum drift required to force a currentTime correction during free-running playback.
  *  Below this value the video element runs freely — do not seek it. */
