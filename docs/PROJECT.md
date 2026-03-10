@@ -17,6 +17,7 @@
 9. [Video Editor Functionalities](#9-video-editor-functionalities)
 10. [Loading Media Optimization](#10-loading-media-optimization)
 11. [Renderization](#11-renderization)
+12. [Preview Player Deep Dive](#12-preview-player-deep-dive)
 
 ---
 
@@ -383,3 +384,142 @@ The `renderJob` function receives the `RenderJob` and the `fileMap` and orchestr
 **Step 6 — Return.** The output file is read from the virtual filesystem and returned as a raw `Uint8Array`.
 
 Back in `VideoEditor`, the array is wrapped in a `Blob`, a temporary object URL is created, a hidden `<a>` tag is clicked programmatically to trigger the browser's download dialog, and the URL is immediately revoked to free memory.
+
+---
+
+## 12. Preview Player Deep Dive
+
+This section documents the internal mechanics of `PreviewPlayer.tsx` and `usePlayer.ts` in detail. Understanding these internals is required before making any changes to playback, clip synchronization, or timeline-to-media mapping.
+
+---
+
+### Architecture Overview
+
+The preview is a **timeline-driven playback system**: the timeline clock is always the source of truth, and all media elements (video, audio) are slaves that are commanded to a specific position on every frame. No DOM media element ever drives the timeline; the direction of control is always one-way:
+
+```
+Timeline Clock (requestAnimationFrame in usePlayer)
+        ↓
+  setPlayhead → Zustand store
+        ↓
+PreviewPlayer useEffect([playhead])
+        ↓
+For each active clip:
+  mediaTime = clip.mediaStart + (playhead - clip.timelineStart)
+  videoEl.currentTime = mediaTime
+```
+
+---
+
+### Time Precision
+
+All timeline and media boundary values (`timelineStart`, `timelineEnd`, `mediaStart`, `mediaEnd`) are stored in **seconds, rounded to the nearest millisecond**. This is enforced at every write path through the helpers in `utils/time.ts`:
+
+```ts
+import { toMs, toSeconds } from "../utils/time"
+
+// Write
+const cleanTime = toSeconds(toMs(rawSeconds))  // e.g. 4.9999999 → 5.000
+
+// Read (already in seconds — use directly for currentTime, comparison, etc.)
+video.currentTime = clip.mediaStart + offset
+```
+
+**Why this matters:** floating-point arithmetic accumulates small errors. Even a `0.0001 s` difference between `clipA.timelineEnd` and `clipB.timelineStart` creates a real gap in the timeline. By rounding to integer milliseconds at write time, adjacent clip boundaries are guaranteed to be bitwise identical and the gap never exists at the data level.
+
+The write paths that apply rounding are:
+- `setPlayhead` in `editorStore.ts` — called on every RAF frame and on scrub
+- `splitClip` in `editorStore.ts` — the cut time is rounded once and shared verbatim to both halves
+- `moveClip` in `editorStore.ts` — the new start position is rounded before recomputing the end
+
+---
+
+### Active Clip Detection
+
+The preview must know which clips are "active" (visible) at the current playhead. The detection uses a small **epsilon window** (`CLIP_EPSILON = 0.001 s`, defined in `utils/time.ts`) on both edges:
+
+```ts
+clip.timelineStart - CLIP_EPSILON <= playhead &&
+playhead < clip.timelineEnd + CLIP_EPSILON
+```
+
+The epsilon serves two purposes:
+
+1. **Safety net against residual float drift** — even with rounding, the RAF-computed playhead is a floating-point sum of wall-clock deltas that can land fractionally outside a boundary. The 1 ms window absorbs that.
+2. **Smooth boundary transitions** — the epsilon ensures the incoming clip is detected as active on the same frame that the outgoing clip ends, so there is never a frame where no clip is active.
+
+**Tie-break rule:** when the epsilon window causes two adjacent clips on the same track to both qualify as active (which can happen for one frame at an exact boundary), the preview keeps only the clip with the **later `timelineStart`** — the incoming clip. This is computed per track inside the `activeClips` derivation in `PreviewPlayer`.
+
+The `isInGap` function in `usePlayer.ts` uses the same epsilon on the right edge of each clip. This prevents the playback loop from incorrectly stopping at a clip boundary that only looks like a gap due to sub-ms float overrun.
+
+---
+
+### Media Element Lifecycle and the No-Flash Rule
+
+Every `<video>` and `<audio>` element in the preview is **keyed by `clip.mediaId`**, not by `clip.id`. This is the most important property for seamless playback at clip boundaries.
+
+**Why:** when a clip is split into two halves, both halves reference the same `mediaId` but have different `id`s. If the elements were keyed by `clip.id`, React would unmount the first element and mount a brand-new one when the second clip becomes active. The new element starts blank (black frame) and takes at least one browser paint cycle to decode the correct position, even if `currentTime` is set immediately. Keying by `mediaId` causes React to **reuse the exact same DOM element** for both halves — no unmount, no blank frame, no reload.
+
+Consequences of this design:
+
+- **Same `mediaId` transition (common for splits):** the same `<video>` element stays in the DOM. The sync effect only seeks `currentTime`. The browser does not re-fetch or re-decode the stream. No black frame.
+- **Different `mediaId` transition:** React mounts a new `<video>` element with the new `src`. The element starts blank while the browser loads the stream. The `onLoadedMetadata` callback handles seeking to the correct offset and conditionally calling `play()` once the browser is ready.
+- **`videoEl.src` is never set to an empty string.** The element always holds a valid blob URL from the moment it is mounted until it is unmounted. The `src` prop in JSX is the only place the source is written; no imperative `src = ''` anywhere.
+
+**The `mediaRefsRef` map** (a `Map<string, HTMLVideoElement | HTMLAudioElement>`) is therefore keyed by `mediaId`. All sync lookups use `clip.mediaId` as the key, not `clip.id`.
+
+---
+
+### Seek–Before–Play Invariant
+
+Every code path that initiates or resumes playback follows a strict order of operations:
+
+1. Update `src` if the media file changed (different `mediaId` → new element via React, `src` set by React prop).
+2. Set `currentTime` to the correct media offset.
+3. Call `play()` — only after step 2.
+
+```ts
+// Correct — from the clip-transition block in PreviewPlayer
+el.currentTime = Math.max(0, mediaTime)   // seek first
+if (playing) el.play().catch(() => {})    // play after seek
+```
+
+Calling `play()` before `currentTime` is set causes the browser to display one or more frames from the element's previous position before the seek completes. This produces the "first-frame flash" — a brief glimpse of the wrong content at the start of each clip.
+
+There is no `await` between step 2 and step 3. Both calls are synchronous within the same microtask. The browser queues the seek and the play internally and honors the seek position when it starts painting.
+
+---
+
+### Clip Transition Sync Flow
+
+The playhead `useEffect` in `PreviewPlayer` runs on every playhead change (every RAF frame during playback and every scrub event). The flow is:
+
+1. **Compute `activeIds`** — the set of clip IDs active at the current playhead, using epsilon.
+2. **Compute `activeMediaIds`** — the derived set of `mediaId`s for those clips (video/audio only).
+3. **Pause elements that are no longer active** — iterate `mediaRefsRef`; any element whose `mediaId` is not in `activeMediaIds` is paused.
+4. **Detect `newlyActiveIds`** — diff `activeIds` against `prevActiveIdsRef` (the active IDs from the previous frame). Any ID that appears in `activeIds` but not in `prevActiveIdsRef` is a newly active clip.
+5. **Seek and play newly active clips** — for each newly active video/audio clip, compute `mediaTime = clip.mediaStart + (playhead - clip.timelineStart)`, set `el.currentTime`, and call `el.play()` if `isPlaying`. This runs **before** the `if (playing) return` early-exit so it fires during active playback.
+6. **Update `prevActiveIdsRef`** — record the current `activeIds` for next frame's diff.
+7. **Scrub sync (paused state only)** — if not playing, seek all currently active elements to their correct `mediaTime`.
+
+The `onLoadedMetadata` handler on each `<video>` and `<audio>` element covers the asynchronous case: if a new element is mounted (different `mediaId` clip) and its metadata has not loaded by the time step 5 runs, the handler re-runs the seek+play logic once the browser has parsed the stream headers. This ensures no clip is left frozen even on a cold cache.
+
+---
+
+### Gap Behavior
+
+The playback loop (`usePlayer.ts`) calls `isInGap` on every RAF frame. If the playhead enters a region where no video track has a clip, `isInGap` returns `true` and the loop stops, setting `isPlaying = false`. This is intentional — the preview cannot show video where no video clip exists.
+
+With epsilon, `isInGap` uses `time < clip.timelineEnd + CLIP_EPSILON` on the right edge so that the playhead overrunning a boundary by a sub-millisecond float error does not falsely stop playback. A real gap (any gap larger than `CLIP_EPSILON`) still stops playback correctly.
+
+---
+
+### Adding a New Clip Type with Media
+
+If a new clip type is added that references a media file and needs `<video>` or `<audio>` playback, the following requirements apply:
+
+1. The clip's timeline/media time fields must be written through `toSeconds(toMs(...))` in the store action that creates it.
+2. The JSX element must be keyed by `clip.mediaId`.
+3. The `ref` callback must call `mediaRefsRef.current.set(clip.mediaId, el)`.
+4. An `onLoadedMetadata` handler must seek to the correct offset before calling `play()`.
+5. The clip type must be included in the `activeMediaIds` derivation and the `isPlaying` sync effect inside `PreviewPlayer`.
