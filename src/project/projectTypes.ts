@@ -108,6 +108,7 @@ export interface RenderSegment {
   type: "video" | "audio" | "image" | "text"
   transform?: Transform
   volume?: number
+  trackOrder?: number
 }
 
 export interface RenderJob {
