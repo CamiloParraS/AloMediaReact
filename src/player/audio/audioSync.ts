@@ -1,10 +1,15 @@
-import type { AudioClip } from "../../project/projectTypes"
+import type { AudioClip, VideoClip } from "../../project/projectTypes"
 import type { ClipIndex } from "../timeline/clipLookup"
 import { lookupActiveClips } from "../timeline/clipLookup"
 import { DRIFT_CORRECTION_THRESHOLD_S } from "../../constants/timeline"
 
+type AudioBearingClip = AudioClip | VideoClip
+
 /**
  * Synchronises audio elements to the playhead. Called once per RAF frame.
+ * Handles both AudioClip and VideoClip types — VideoClip audio on non-primary
+ * tracks is routed through dedicated <audio> elements in the pool so it is
+ * never silenced by muted secondary <video> elements.
  *
  * - Pauses audio elements whose clips are no longer active.
  * - Seeks newly-active clips to the correct media time.
@@ -19,9 +24,11 @@ export function syncAudioElements(
   audioElements: Map<string, HTMLAudioElement>,
   prevActiveIds: Set<string>,
   getObjectUrl: (mediaId: string) => string | undefined,
+  isMuted = false,
+  volume = 1,
 ): Set<string> {
   const activeAudioClips = lookupActiveClips(clipIndex, ph).filter(
-    (c): c is AudioClip => c.type === "audio",
+    (c): c is AudioBearingClip => c.type === "audio" || c.type === "video",
   )
   const activeTrackIds = new Set(activeAudioClips.map(c => c.trackId))
 
@@ -50,8 +57,8 @@ export function syncAudioElements(
     if (newlyActive.has(clip.id)) {
       el.currentTime = Math.max(0, mediaTime)
       if (playing) {
-        el.muted = false
-        el.volume = 1
+        el.muted = isMuted
+        el.volume = volume
         el.play().catch(() => {})
       }
     } else if (!playing) {

@@ -45,6 +45,9 @@ export class VideoBufferManager {
   constructor(elA: HTMLVideoElement, elB: HTMLVideoElement) {
     this.elA = elA
     this.elB = elB
+    // Always muted — audio is driven through the audio element pool
+    this.elA.muted = true
+    this.elB.muted = true
   }
 
   getActiveEl(): HTMLVideoElement {
@@ -196,11 +199,11 @@ export class VideoBufferManager {
     this.swapPending = false
   }
 
-  setVolume(muted: boolean, vol: number): void {
-    this.elA.muted = muted
-    this.elA.volume = vol
-    this.elB.muted = muted
-    this.elB.volume = vol
+  setVolume(_muted: boolean, _vol: number): void {
+    // Audio is routed through the dedicated audio element pool in useMediaSync.
+    // Video elements are always muted to prevent duplicate audio output.
+    this.elA.muted = true
+    this.elB.muted = true
   }
 
   playActive(): void {
