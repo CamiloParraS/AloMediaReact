@@ -22,15 +22,17 @@ export interface Transform {
 export interface BaseClip {
   id: string
   trackId: string
-  timelineStart: number
-  timelineEnd: number
+  // All time fields below are stored in seconds, rounded to the nearest millisecond.
+  // Always write through toMs/toSeconds from utils/time.ts to guarantee bitwise-identical boundaries.
+  timelineStart: number // seconds (integer-ms precision)
+  timelineEnd: number   // seconds (integer-ms precision)
 }
 
 export interface VideoClip extends BaseClip {
   type: "video"
   mediaId: string
-  mediaStart: number
-  mediaEnd: number
+  mediaStart: number // seconds (integer-ms precision)
+  mediaEnd: number   // seconds (integer-ms precision)
   volume: number
   transform: Transform
 }
@@ -50,8 +52,8 @@ export interface TextClip extends BaseClip {
 export interface AudioClip extends BaseClip {
   type: "audio"
   mediaId: string
-  mediaStart: number
-  mediaEnd: number
+  mediaStart: number // seconds (integer-ms precision)
+  mediaEnd: number   // seconds (integer-ms precision)
   volume: number
 }
 
