@@ -48,24 +48,89 @@ export async function renderJob(
     ])
   }
 
+  const { width: W, height: H } = job.resolution
+  const totalDuration = Math.max(
+    ...job.segments.map(s => s.timelineEnd),
+    0.1,
+  )
+  const isMultiTrack = new Set(videoSegments.map(s => s.trackOrder ?? 0)).size > 1
+
   let videoTrackFile = "video_track.mp4"
 
-  if (videoSegments.length > 1) {
-    // Build concat list
+  if (videoSegments.length === 0) {
+    // No video at all — handled below in the mux step
+  } else if (videoSegments.length === 1 && !isMultiTrack) {
+    videoTrackFile = "trimmed_0.mp4"
+  } else if (!isMultiTrack) {
+    // Single-track: safe to concatenate sequentially
     const concatLines = videoSegments
       .map((_, i) => `file 'trimmed_${i}.mp4'`)
       .join("\n")
-    const concatBytes = new TextEncoder().encode(concatLines)
-    await ffmpeg.writeFile("concat.txt", concatBytes)
-
+    await ffmpeg.writeFile("concat.txt", new TextEncoder().encode(concatLines))
     await ffmpeg.exec([
       "-f", "concat", "-safe", "0",
       "-i", "concat.txt",
       "-c", "copy",
       videoTrackFile,
     ])
-  } else if (videoSegments.length === 1) {
-    videoTrackFile = "trimmed_0.mp4"
+  } else {
+    // Multi-track: composite using overlay filters.
+    // Sort by trackOrder descending so background (highest order) is overlaid first
+    // and foreground (lowest order) ends up on top.
+    const sorted = videoSegments
+      .map((seg, origIdx) => ({ seg, origIdx }))
+      .sort((a, b) => {
+        const od = (b.seg.trackOrder ?? 0) - (a.seg.trackOrder ?? 0)
+        return od !== 0 ? od : a.seg.timelineStart - b.seg.timelineStart
+      })
+
+    // Input 0: black base canvas
+    const inputArgs: string[] = [
+      "-f", "lavfi",
+      "-i", `color=c=black:s=${W}x${H}:d=${totalDuration}:r=${job.fps}`,
+    ]
+
+    // Inputs 1..N: trimmed segments shifted to their timeline position
+    for (const { seg, origIdx } of sorted) {
+      inputArgs.push(
+        "-itsoffset", String(seg.timelineStart),
+        "-i", `trimmed_${origIdx}.mp4`,
+      )
+    }
+
+    // Build overlay filter chain
+    const filterParts: string[] = []
+    let lastLabel = "0:v"
+
+    for (let i = 0; i < sorted.length; i++) {
+      const { seg } = sorted[i]
+      const inIdx = i + 1
+      const t = seg.transform
+      const needsScale = t && (t.width !== W || t.height !== H)
+      const x = t?.x ?? 0
+      const y = t?.y ?? 0
+
+      let videoLabel = `${inIdx}:v`
+      if (needsScale) {
+        filterParts.push(`[${videoLabel}]scale=${t!.width}:${t!.height}[s${i}]`)
+        videoLabel = `s${i}`
+      }
+
+      const outLabel = i === sorted.length - 1 ? "vout" : `t${i}`
+      filterParts.push(
+        `[${lastLabel}][${videoLabel}]overlay=${x}:${y}:eof_action=pass[${outLabel}]`,
+      )
+      lastLabel = outLabel
+    }
+
+    videoTrackFile = "composited.mp4"
+    await ffmpeg.exec([
+      ...inputArgs,
+      "-filter_complex", filterParts.join(";"),
+      "-map", "[vout]",
+      "-c:v", "libx264", "-preset", "fast",
+      "-y", videoTrackFile,
+    ])
   }
 
   const outputFile = `output.${job.outputFormat}`
@@ -84,14 +149,11 @@ export async function renderJob(
       audioInputArgs.push("-i", seg.mediaId)
     }
 
-    const amixInputs = audioSegments.map((_, i) => `[${i + 1}:a]`).join("")
     const volumeFilter = audioSegments
       .map((seg, i) => `[${i + 1}:a]volume=${seg.volume ?? 1}[a${i}]`)
       .join(";")
     const mixInputs = audioSegments.map((_, i) => `[a${i}]`).join("")
-    const filterComplex = videoSegments.length > 0
-      ? `${volumeFilter};${mixInputs}amix=inputs=${audioSegments.length}[aout]`
-      : `${volumeFilter};${mixInputs}amix=inputs=${audioSegments.length}[aout]`
+    const filterComplex = `${volumeFilter};${mixInputs}amix=inputs=${audioSegments.length}[aout]`
 
     const videoInputArgs = videoSegments.length > 0
       ? ["-i", videoTrackFile]
@@ -101,8 +163,8 @@ export async function renderJob(
       ...videoInputArgs,
       ...audioInputArgs,
       "-filter_complex", filterComplex,
-      ...(videoSegments.length > 0 ? ["-map", "0:v", "-map", `[aout]`] : ["-map", "[aout]"]),
-      "-c:v", "copy",
+      ...(videoSegments.length > 0 ? ["-map", "0:v", "-map", "[aout]"] : ["-map", "[aout]"]),
+      ...(videoSegments.length > 0 && !isMultiTrack ? ["-c:v", "copy"] : []),
       "-c:a", "aac",
       outputFile,
     ])
