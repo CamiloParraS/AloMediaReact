@@ -57,7 +57,7 @@ export function buildRenderJob(
   fps: number
 ): RenderJob {
   const segments: RenderSegment[] = project.tracks
-    .flatMap(track => track.clips.map(clipToSegment))
+    .flatMap(track => track.clips.map(c => ({ ...clipToSegment(c), trackOrder: track.order })))
     .sort((a, b) => a.timelineStart - b.timelineStart)
 
   return { segments, outputFormat, resolution, fps }
