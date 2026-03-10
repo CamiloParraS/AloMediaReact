@@ -3,7 +3,8 @@ import { useEditorStore } from "../store/editorStore"
 import { getProjectDuration, CLIP_EPSILON } from "../utils/time"
 import { STORE_SYNC_INTERVAL_MS } from "../constants/timeline"
 
-/** Returns true when there is no video clip covering the given time (a "gap").
+/** Returns true when there is no clip of any type covering the given time (a "gap").
+ *  Checks ALL tracks (video + audio) so playback continues as long as any clip is active.
  *  Uses CLIP_EPSILON on the right edge to prevent false gaps at exact clip boundaries
  *  caused by sub-millisecond float arithmetic in the RAF timing loop. */
 function isInGap(time: number): boolean {
@@ -11,9 +12,7 @@ function isInGap(time: number): boolean {
   if (time <= 0) return false
 
   const { project } = useEditorStore.getState()
-  const videoTracks = project.tracks.filter(t => t.type === "video")
-  if (videoTracks.length === 0) return false
-  const allClips = videoTracks.flatMap(t => t.clips)
+  const allClips = project.tracks.flatMap(t => t.clips)
   if (allClips.length === 0) return false
   return !allClips.some(c => c.timelineStart <= time && time < c.timelineEnd + CLIP_EPSILON)
 }
