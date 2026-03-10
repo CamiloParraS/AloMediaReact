@@ -10,6 +10,7 @@ import { setupCanvasScaling } from "../../player/render/canvasScaling"
 import { TransformOverlay } from "./TransformOverlay"
 import { IconButton } from "../ui/IconButton"
 import { RangeSlider } from "../ui/RangeSlider"
+import { getActiveVideoClip } from "../../player/timeline/activeClipResolver"
 
 function formatTime(seconds: number): string {
   seconds = Math.max(0, isFinite(seconds) ? seconds : 0)
@@ -36,6 +37,10 @@ export function PreviewPlayer() {
   const [isMuted, setIsMuted] = useState(false)
   const [volume, setVolume] = useState(1)
 
+  // Secondary video element refs and clip data for multi-track sync
+  const secondaryVideoElemsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
+  const secondaryClipsRef = useRef<VideoClip[]>([])
+
   // Canvas scaling via ResizeObserver
   useEffect(() => {
     const container = canvasContainerRef.current
@@ -45,12 +50,14 @@ export function PreviewPlayer() {
   }, [])
 
   // Media synchronization (video double-buffer + audio)
-  const { videoRefA, videoRefB, getObjectUrl } = useMediaSync({
+  const { videoRefA, videoRefB, getObjectUrl, getPlaybackUrl } = useMediaSync({
     onFrameRef,
     seekFlagResetRef,
     playheadRef,
     isMuted,
     volume,
+    secondaryVideoElemsRef,
+    secondaryClipsRef,
   })
 
   // Derived values for rendering
@@ -76,6 +83,33 @@ export function PreviewPlayer() {
     () => activeClips.filter(c => c.type === "image" || c.type === "text"),
     [activeClips],
   )
+
+  // Track order lookup and z-index helper (lower order = foreground = higher z-index)
+  const trackOrderMap = useMemo(
+    () => new Map(project.tracks.map(t => [t.id, t.order])),
+    [project.tracks],
+  )
+  const maxOrder = useMemo(
+    () => Math.max(0, ...project.tracks.map(t => t.order)),
+    [project.tracks],
+  )
+  const zIndex = (trackId: string) => maxOrder - (trackOrderMap.get(trackId) ?? 0) + 1
+
+  // Primary video clip (handled by double-buffer) and secondary video clips (extra elements)
+  const primaryVideoClip = useMemo(
+    () => getActiveVideoClip(project.tracks, playhead),
+    [project.tracks, playhead],
+  )
+
+  const secondaryVideoClips = useMemo(() => {
+    const primaryId = primaryVideoClip?.id
+    return activeClips.filter(
+      (c): c is VideoClip => c.type === "video" && c.id !== primaryId,
+    )
+  }, [activeClips, primaryVideoClip])
+
+  // Keep secondary clip ref in sync for the RAF loop
+  secondaryClipsRef.current = secondaryVideoClips
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     const rect = canvasContainerRef.current!.getBoundingClientRect()
@@ -111,24 +145,41 @@ export function PreviewPlayer() {
               pointerEvents: selectedClipId ? "none" : undefined,
             }}
           >
-            {/* Double-buffer video elements */}
+            {/* Double-buffer video elements (primary clip) */}
             <video
               ref={videoRefA}
-              style={{ position: "absolute", opacity: 1, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)" }}
+              style={{ position: "absolute", opacity: 1, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0 }}
               preload="auto" playsInline disablePictureInPicture
             />
             <video
               ref={videoRefB}
-              style={{ position: "absolute", opacity: 0, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)" }}
+              style={{ position: "absolute", opacity: 0, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0 }}
               preload="auto" playsInline disablePictureInPicture
             />
 
+            {/* Secondary video clips from other tracks */}
+            {secondaryVideoClips.map(clip => (
+              <video
+                key={clip.mediaId}
+                ref={el => {
+                  if (el) secondaryVideoElemsRef.current.set(clip.id, el)
+                  else secondaryVideoElemsRef.current.delete(clip.id)
+                }}
+                src={getPlaybackUrl(clip.mediaId)}
+                style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId), pointerEvents: "none" }}
+                muted
+                preload="auto"
+                playsInline
+                disablePictureInPicture
+              />
+            ))}
+
             {staticElements.map(clip => {
               if (clip.type === "image") {
-                return <img key={clip.id} src={getObjectUrl(clip.mediaId)} style={applyTransform(clip.transform)} alt="" />
+                return <img key={clip.id} src={getObjectUrl(clip.mediaId)} style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId) }} alt="" />
               }
               if (clip.type === "text") {
-                return <div key={clip.id} style={applyTransform(clip.transform)}>{clip.content}</div>
+                return <div key={clip.id} style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId) }}>{clip.content}</div>
               }
               return null
             })}
