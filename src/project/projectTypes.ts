@@ -19,6 +19,16 @@ export interface Transform {
   rotation: number
 }
 
+export interface ColorAdjustments {
+  brightness: number  // -1.0 to 1.0, default 0
+  contrast: number    // -1.0 to 1.0, default 0 (maps to FFmpeg 1.0 neutral)
+  saturation: number  // 0.0 to 3.0, default 1
+  gamma: number       // 0.1 to 10.0, default 1
+  exposure: number    // -3.0 to 3.0, default 0
+  shadow?: number     // -1.0 to 1.0, default 0 (lifts or crushes dark tones)
+  definition?: number // -1.0 to 1.0, default 0 (local midtone contrast via unsharp)
+}
+
 export interface BaseClip {
   id: string
   trackId: string
@@ -35,12 +45,14 @@ export interface VideoClip extends BaseClip {
   mediaEnd: number   // seconds (integer-ms precision)
   volume: number
   transform: Transform
+  colorAdjustments?: ColorAdjustments
 }
 
 export interface ImageClip extends BaseClip {
   type: "image"
   mediaId: string
   transform: Transform
+  colorAdjustments?: ColorAdjustments
 }
 
 export interface TextClip extends BaseClip {
@@ -109,6 +121,7 @@ export interface RenderSegment {
   transform?: Transform
   volume?: number
   trackOrder?: number
+  colorAdjustments?: ColorAdjustments
 }
 
 export interface RenderJob {

@@ -1,7 +1,7 @@
 import type { Track, VideoClip } from "../../project/projectTypes"
 import { PRELOAD_LOOKAHEAD_MS, DRIFT_CORRECTION_THRESHOLD_S } from "../../constants/timeline"
 import { getActiveVideoClip, getNextVideoClip } from "../timeline/activeClipResolver"
-import { applyTransformToEl } from "../render/transformUtils"
+import { applyTransformToEl, applyColorAdjustmentsToEl } from "../render/transformUtils"
 
 export interface BufferState {
   activeClipId: string | null
@@ -66,6 +66,7 @@ export class VideoBufferManager {
     el.src = url
     seekEl(el, clip.mediaStart)
     applyTransformToEl(el, clip.transform)
+    applyColorAdjustmentsToEl(el, clip.colorAdjustments)
     el.style.opacity = "1"
     this.getBufferEl().style.opacity = "0"
     this.state = {
@@ -77,7 +78,7 @@ export class VideoBufferManager {
     this.clipSeekDone = clip.id
   }
 
-  // ── Buffer preparation ──────────────────────────────────────────────
+  // Buffer preparation 
 
   private prepareBuffer(ph: number, activeClip: VideoClip, tracks: Track[], getUrl: UrlResolver): void {
     const remaining = activeClip.timelineEnd - ph
@@ -103,7 +104,7 @@ export class VideoBufferManager {
     if (bufferEl.readyState >= 3) this.bufferReady = true
   }
 
-  // ── Buffer swap ─────────────────────────────────────────────────────
+  //Buffer swap
 
   private swapBuffers(nextClip: VideoClip, ph: number, getUrl: UrlResolver, getIsPlaying: () => boolean): void {
     const outgoingEl = this.getActiveEl()
@@ -126,6 +127,7 @@ export class VideoBufferManager {
     }
 
     applyTransformToEl(incomingEl, nextClip.transform)
+    applyColorAdjustmentsToEl(incomingEl, nextClip.colorAdjustments)
 
     const doSwap = () => {
       if (this.swapGen !== gen) return
@@ -152,7 +154,7 @@ export class VideoBufferManager {
     }
   }
 
-  // ── Per-frame sync (called from RAF) ────────────────────────────────
+  //Per-frame sync (called from RAF)
 
   syncVideo(ph: number, tracks: Track[], getUrl: UrlResolver, getIsPlaying: () => boolean): void {
     const playing = getIsPlaying()
@@ -180,6 +182,7 @@ export class VideoBufferManager {
         const el = this.getActiveEl()
         el.currentTime = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart)
         applyTransformToEl(el, activeVideoClip.transform)
+        applyColorAdjustmentsToEl(el, activeVideoClip.colorAdjustments)
         this.clipSeekDone = null
       }
     } else if (this.state.activeClipId !== null) {
@@ -192,7 +195,7 @@ export class VideoBufferManager {
     }
   }
 
-  // ── Controls ────────────────────────────────────────────────────────
+  //Controls
 
   resetSeekFlags(): void {
     this.clipSeekDone = null

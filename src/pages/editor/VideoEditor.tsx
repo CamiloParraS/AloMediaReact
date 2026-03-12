@@ -4,6 +4,7 @@ import { MediaLibrary } from "../../components/editor/MediaLibrary"
 import { Timeline } from "../../components/editor/Timeline"
 import { Toolbar } from "../../components/editor/Toolbar"
 import { PreviewPlayer } from "../../components/editor/PreviewPlayer"
+import { ColorAdjustmentsPanel } from "../../components/editor/ColorAdjustmentsPanel"
 import { useEditorStore } from "../../store/editorStore"
 import { exportProjectJSON, loadProject } from "../../project/projectSerializer"
 import { buildRenderJob } from "../../engine/renderPipeline"
@@ -18,6 +19,16 @@ export default function VideoEditor() {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(project.name)
   const loadInputRef = useRef<HTMLInputElement>(null)
+
+  const selectedClip = useEditorStore(s => {
+    if (!s.selectedClipId) return null
+    for (const t of s.project.tracks) {
+      const c = t.clips.find(c => c.id === s.selectedClipId)
+      if (c) return c
+    }
+    return null
+  })
+  const showColorPanel = selectedClip?.type === "video" || selectedClip?.type === "image"
 
   async function handleRender() {
     setIsRendering(true)
@@ -122,6 +133,13 @@ export default function VideoEditor() {
         <div className="flex flex-1 min-h-0 overflow-hidden bg-dark">
           <PreviewPlayer />
         </div>
+
+        {/* Right: color adjustments panel (shown when video/image clip is selected) */}
+        {showColorPanel && selectedClip && (
+          <aside className="w-56 shrink-0 flex flex-col bg-dark-surface border-l border-dark-border overflow-y-auto">
+            <ColorAdjustmentsPanel clipId={selectedClip.id} />
+          </aside>
+        )}
       </div>
 
       {/* ── Toolbar ── */}

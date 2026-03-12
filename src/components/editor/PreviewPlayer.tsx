@@ -6,6 +6,8 @@ import { usePlayer } from "../../hooks/usePlayer"
 import { getProjectDuration, CLIP_EPSILON } from "../../utils/time"
 import { useMediaSync } from "../../player/hooks/useMediaSync"
 import { applyTransform } from "../../player/render/transformUtils"
+import { buildCssFilter } from "../../utils/colorAdjustmentFilters"
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
 import { setupCanvasScaling } from "../../player/render/canvasScaling"
 import { TransformOverlay } from "./TransformOverlay"
 import { IconButton } from "../ui/IconButton"
@@ -148,12 +150,12 @@ export function PreviewPlayer() {
             {/* Double-buffer video elements (primary clip) */}
             <video
               ref={videoRefA}
-              style={{ position: "absolute", opacity: 1, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0 }}
+              style={{ position: "absolute", opacity: 1, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0, filter: primaryVideoClip ? buildCssFilter(primaryVideoClip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) : undefined }}
               preload="auto" playsInline disablePictureInPicture
             />
             <video
               ref={videoRefB}
-              style={{ position: "absolute", opacity: 0, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0 }}
+              style={{ position: "absolute", opacity: 0, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0, filter: primaryVideoClip ? buildCssFilter(primaryVideoClip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) : undefined }}
               preload="auto" playsInline disablePictureInPicture
             />
 
@@ -166,7 +168,7 @@ export function PreviewPlayer() {
                   else secondaryVideoElemsRef.current.delete(clip.id)
                 }}
                 src={getPlaybackUrl(clip.mediaId)}
-                style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId), pointerEvents: "none" }}
+                style={{ ...applyTransform(clip.transform), filter: buildCssFilter(clip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS), zIndex: zIndex(clip.trackId), pointerEvents: "none" }}
                 muted
                 preload="auto"
                 playsInline
@@ -176,7 +178,7 @@ export function PreviewPlayer() {
 
             {staticElements.map(clip => {
               if (clip.type === "image") {
-                return <img key={clip.id} src={getObjectUrl(clip.mediaId)} style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId) }} alt="" />
+                return <img key={clip.id} src={getObjectUrl(clip.mediaId)} style={{ ...applyTransform(clip.transform), filter: buildCssFilter((clip as ImageClip).colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS), zIndex: zIndex(clip.trackId) }} alt="" />
               }
               if (clip.type === "text") {
                 return <div key={clip.id} style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId) }}>{clip.content}</div>
@@ -202,7 +204,7 @@ export function PreviewPlayer() {
                 clip={selectedClip}
                 previewWidth={canvasContainerRef.current?.clientWidth ?? 640}
                 previewHeight={canvasContainerRef.current?.clientHeight ?? 360}
-                onUpdate={t => updateClipTransform(selectedClipId, t)}
+                onUpdate={t => updateClipTransform(selectedClipId, t )}
                 onCommit={() => commitTransform(selectedClipId)}
               />
             )
