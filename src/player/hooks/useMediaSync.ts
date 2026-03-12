@@ -42,7 +42,6 @@ export function useMediaSync({
   const proxyMap = useEditorStore(s => s.proxyMap)
   const tracks = project.tracks
 
-  // ── Refs ─────────────────────────────────────────────────────────────
 
   const videoRefA = useRef<HTMLVideoElement>(null)
   const videoRefB = useRef<HTMLVideoElement>(null)
@@ -55,21 +54,18 @@ export function useMediaSync({
   const isMutedRef = useRef(isMuted)
   const volumeRef = useRef(volume)
 
-  // ── Keep refs in sync with React state ───────────────────────────────────
 
   useEffect(() => { clipIndexRef.current = buildClipIndex(tracks) }, [tracks])
   useEffect(() => { proxyMapRef.current = proxyMap }, [proxyMap])
   useEffect(() => { isMutedRef.current = isMuted }, [isMuted])
   useEffect(() => { volumeRef.current = volume }, [volume])
 
-  // ── Seek flag reset (explicit user seeks) ────────────────────────────
-
   useEffect(() => {
     seekFlagResetRef.current = () => managerRef.current?.resetSeekFlags()
     return () => { seekFlagResetRef.current = null }
   }, [seekFlagResetRef])
 
-  // ── Video buffer manager init ────────────────────────────────────────
+  // Video buffer manager init
 
   useEffect(() => {
     const elA = videoRefA.current
@@ -87,7 +83,7 @@ export function useMediaSync({
     return () => { managerRef.current = null }
   }, [])
 
-  // ── Volume / mute sync ───────────────────────────────────────────────
+  // Volume / mute sync 
   // Primary video buffer elements are always muted — audio is driven exclusively
   // through the audio element pool so every track's audio is handled uniformly.
 
@@ -103,7 +99,7 @@ export function useMediaSync({
     }
   }, [isMuted, volume])
 
-  // ── Audio element pool ───────────────────────────────────────────────
+  //Audio element pool 
   // Pool covers ALL tracks (video + audio) so VideoClip audio is not lost.
 
   const allTrackIds = useMemo(
@@ -114,7 +110,7 @@ export function useMediaSync({
   useEffect(() => { syncAudioPool(audioElementsRef.current, allTrackIds) }, [allTrackIds])
   useEffect(() => () => { destroyAudioPool(audioElementsRef.current) }, [])
 
-  // ── Per-frame sync (RAF callback) ────────────────────────────────────
+  //Per-frame sync (RAF callback)
 
   function syncMediaElements(ph: number): void {
     const p = useEditorStore.getState().project
@@ -171,14 +167,14 @@ export function useMediaSync({
     return () => { onFrameRef.current = null }
   }, [])
 
-  // ── Scrub sync (not playing) ─────────────────────────────────────────
+  //Scrub sync (not playing) 
 
   useEffect(() => {
     if (isPlayingRef.current) return
     syncMediaElements(playhead)
   }, [playhead])
 
-  // ── Play / pause toggle ──────────────────────────────────────────────
+  //Play / pause toggle
 
   useEffect(() => {
     if (isPlaying) {
@@ -213,11 +209,11 @@ export function useMediaSync({
     }
   }, [isPlaying])
 
-  // ── URL cleanup ──────────────────────────────────────────────────────
+  //URL cleanup 
 
   useEffect(() => () => { registryRef.current.revokeAll() }, [])
 
-  // ── Public API ───────────────────────────────────────────────────────
+  //Public API 
 
   const getObjectUrl = (mediaId: string) => registryRef.current.getObjectUrl(mediaId)
   const getPlaybackUrl = (mediaId: string) =>
