@@ -63,7 +63,7 @@ export function MediaLibrary() {
 
   return (
     <div className="flex flex-col h-full bg-dark-surface overflow-hidden">
-      {/* Header — only shown when items exist */}
+      {/* Header */}
       {hasItems && (
         <div className="flex items-center justify-between px-3 py-2 border-b border-dark-border shrink-0">
           <span className="text-xs font-semibold text-muted-light uppercase tracking-wider">Media</span>
@@ -86,7 +86,7 @@ export function MediaLibrary() {
         onChange={e => { handleFiles(e.target.files); e.target.value = "" }}
       />
 
-      {/* Empty state — full-panel clickable drop zone */}
+      {/* full-panel clickable drop zone */}
       {!hasItems && (
         <div
           className="flex flex-col items-center justify-center flex-1 m-3 gap-4 rounded-xl border-2 border-dashed border-dark-border hover:border-accent-red/60 hover:bg-dark-elevated/20 editor-transition"
@@ -102,7 +102,7 @@ export function MediaLibrary() {
         </div>
       )}
 
-      {/* 2-column square grid — shown when items exist */}
+      {/* 2-column square grid */}
       {hasItems && (
         <div className="grid grid-cols-2 gap-2 p-2 overflow-y-auto flex-1">
           {media.map(item => (
