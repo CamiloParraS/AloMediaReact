@@ -11,6 +11,7 @@ function clipToSegment(clip: Clip): RenderSegment {
       type: "video",
       transform: clip.transform,
       volume: clip.volume,
+      colorAdjustments: clip.colorAdjustments,
     }
   }
 
@@ -35,6 +36,7 @@ function clipToSegment(clip: Clip): RenderSegment {
       timelineEnd: clip.timelineEnd,
       type: "image",
       transform: clip.transform,
+      colorAdjustments: clip.colorAdjustments,
     }
   }
 

@@ -1,6 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg"
 import { fetchFile, toBlobURL } from "@ffmpeg/util"
 import type { RenderJob } from "../project/projectTypes"
+import { buildEqFilter, buildShadowFilter, buildDefinitionFilter } from "../utils/colorAdjustmentFilters"
 
 const ffmpeg = new FFmpeg()
 
@@ -36,24 +37,47 @@ export async function renderJob(
   const videoSegments = job.segments.filter(s => s.type === "video")
   const audioSegments = job.segments.filter(s => s.type === "audio")
 
-  // Trim each video segment
-  for (let i = 0; i < videoSegments.length; i++) {
-    const seg = videoSegments[i]
-    await ffmpeg.exec([
-      "-i", seg.mediaId,
-      "-ss", String(seg.mediaStart),
-      "-to", String(seg.mediaEnd),
-      "-c", "copy",
-      `trimmed_${i}.mp4`,
-    ])
-  }
-
   const { width: W, height: H } = job.resolution
   const totalDuration = Math.max(
     ...job.segments.map(s => s.timelineEnd),
     0.1,
   )
   const isMultiTrack = new Set(videoSegments.map(s => s.trackOrder ?? 0)).size > 1
+
+  // Trim each video segment.
+  // For single-track segments: bake color filters at trim time (requires encode when active).
+  // For multi-track segments: keep -c copy here; filters are applied in the compositing graph.
+  for (let i = 0; i < videoSegments.length; i++) {
+    const seg = videoSegments[i]
+    const vfParts: string[] = []
+    if (!isMultiTrack && seg.colorAdjustments) {
+      const eq = buildEqFilter(seg.colorAdjustments)
+      const shadow = buildShadowFilter(seg.colorAdjustments)
+      const definition = buildDefinitionFilter(seg.colorAdjustments)
+      if (eq) vfParts.push(eq)
+      if (shadow) vfParts.push(shadow)
+      if (definition) vfParts.push(definition)
+    }
+
+    if (vfParts.length > 0) {
+      await ffmpeg.exec([
+        "-i", seg.mediaId,
+        "-ss", String(seg.mediaStart),
+        "-to", String(seg.mediaEnd),
+        "-vf", vfParts.join(","),
+        "-c:v", "libx264", "-preset", "fast",
+        `trimmed_${i}.mp4`,
+      ])
+    } else {
+      await ffmpeg.exec([
+        "-i", seg.mediaId,
+        "-ss", String(seg.mediaStart),
+        "-to", String(seg.mediaEnd),
+        "-c", "copy",
+        `trimmed_${i}.mp4`,
+      ])
+    }
+  }
 
   let videoTrackFile = "video_track.mp4"
 
@@ -114,6 +138,23 @@ export async function renderJob(
       if (needsScale) {
         filterParts.push(`[${videoLabel}]scale=${t!.width}:${t!.height}[s${i}]`)
         videoLabel = `s${i}`
+      }
+
+      // Inject eq → shadow → definition filters after scale/position, before overlay
+      const eqFilter = seg.colorAdjustments ? buildEqFilter(seg.colorAdjustments) : null
+      if (eqFilter) {
+        filterParts.push(`[${videoLabel}]${eqFilter}[eq${i}]`)
+        videoLabel = `eq${i}`
+      }
+      const shadowFilter = seg.colorAdjustments ? buildShadowFilter(seg.colorAdjustments) : null
+      if (shadowFilter) {
+        filterParts.push(`[${videoLabel}]${shadowFilter}[shadow${i}]`)
+        videoLabel = `shadow${i}`
+      }
+      const definitionFilter = seg.colorAdjustments ? buildDefinitionFilter(seg.colorAdjustments) : null
+      if (definitionFilter) {
+        filterParts.push(`[${videoLabel}]${definitionFilter}[def${i}]`)
+        videoLabel = `def${i}`
       }
 
       const outLabel = i === sorted.length - 1 ? "vout" : `t${i}`
