@@ -3,7 +3,7 @@ import { generateId } from "../utils/id"
 import { TIMELINE_ZOOM } from "../constants/timeline"
 import { getInsertionIndex } from "../utils/tracks"
 import { toMs, toSeconds } from "../utils/time"
-import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType } from "../project/projectTypes"
+import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType, Transform, ColorAdjustments } from "../project/projectTypes"
 
 export interface ProxyState {
   status: 'pending' | 'ready' | 'error'
@@ -24,8 +24,9 @@ type StoreActions = {
   removeTrack: (trackId: string) => void
   reorderTrack: (sourceTrackId: string, targetTrackId: string) => void
   resizeClip: (clipId: string, newEnd: number) => void
-  updateClipTransform: (clipId: string, transform: Partial<import('./projectTypes').Transform>) => void
+  updateClipTransform: (clipId: string, transform: Partial<Transform>) => void
   commitTransform: (clipId: string) => void
+  updateClipColorAdjustments: (clipId: string, adjustments: ColorAdjustments) => void
   setPlayhead: (time: number) => void
   setIsPlaying: (value: boolean) => void
   setTimelineScale: (scale: number) => void
@@ -272,7 +273,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }))
   },
 
-  updateClipTransform(clipId: string, transform: Partial<import('./projectTypes').Transform>): void {
+  updateClipTransform(clipId: string, transform: Partial<Transform>): void {
     set(state => ({
       project: {
         ...state.project,
@@ -288,8 +289,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }))
   },
 
-  commitTransform(clipId: string): void {
+  commitTransform(_clipId: string): void {
     get().pushHistory('Transform clip')
+  },
+
+  updateClipColorAdjustments(clipId: string, adjustments: ColorAdjustments): void {
+    get().pushHistory('Color adjustment')
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            if (clip.id !== clipId) return clip
+            if (clip.type !== 'video' && clip.type !== 'image') return clip
+            return { ...clip, colorAdjustments: adjustments }
+          }),
+        })),
+      },
+    }))
   },
 
   splitClip(clipId: string, time: number): void {
