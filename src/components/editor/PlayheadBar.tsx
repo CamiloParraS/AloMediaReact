@@ -1,49 +1,30 @@
-import { useRef, useState } from "react"
+import { useRef } from "react"
 import { useEditorStore } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
-import { getProjectDuration, timeToPx, pxToTime, TRACK_HEADER_WIDTH } from "../../utils/time"
-import { TIMELINE_ZOOM } from "../../constants/timeline"
-
-function getTickInterval(pxPerSecond: number): { major: number; minor: number } {
-  if (pxPerSecond >= 100) return { major: 1,   minor: 0.5  }
-  if (pxPerSecond >= 50)  return { major: 5,   minor: 1    }
-  if (pxPerSecond >= 20)  return { major: 15,  minor: 5    }
-  if (pxPerSecond >= 8)   return { major: 60,  minor: 15   }
-  return                          { major: 300, minor: 60  }
-}
-
-function formatTickLabel(seconds: number, majorInterval: number): string {
-  if (majorInterval >= 60) {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return s === 0 ? `${m}m` : `${m}:${String(s).padStart(2, "0")}`
-  }
-  return `${seconds}s`
-}
+import { formatTimecode, timeToPx, pxToTime, TRACK_HEADER_WIDTH } from "../../utils/time"
 
 interface PlayheadBarProps {
   totalWidth: number
+  duration: number
+  majorInterval: number
 }
 
-export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
+export function PlayheadBar({ totalWidth, duration, majorInterval }: PlayheadBarProps) {
   const playhead = useEditorStore(s => s.playhead)
   const timelineScale = useEditorStore(s => s.timelineScale)
-  const setTimelineScale = useEditorStore(s => s.setTimelineScale)
-  const tracks = useEditorStore(s => s.project.tracks)
   const { seek, pause } = usePlayer()
-  const [isDraggingZoom, setIsDraggingZoom] = useState(false)
 
   const rulerRef = useRef<HTMLDivElement>(null)
-  const duration = getProjectDuration(tracks)
   const playheadLeft = timeToPx(playhead, timelineScale)
-  const { major, minor } = getTickInterval(timelineScale)
 
-  // Build tick list — step through at minor interval up to duration + 10
+  const minorInterval = majorInterval / 5
   const rulerEnd = duration + 10
-  const tickCount = Math.ceil(rulerEnd / minor) + 1
+  const tickCount = Math.ceil(rulerEnd / minorInterval) + 1
   const ticks = Array.from({ length: tickCount }, (_, i) => {
-    const t = i * minor
-    return { t, isMajor: t % major < 0.0001 }
+    const t = i * minorInterval
+    const majorIndex = Math.round(t / majorInterval)
+    const isMajor = Math.abs(t - (majorIndex * majorInterval)) < 0.0001
+    return { t, isMajor }
   })
 
   function timeFromClientX(clientX: number): number {
@@ -56,45 +37,15 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
     e.preventDefault()
     if (useEditorStore.getState().isPlaying) pause()
 
-    const startX = e.clientX
-    let lastX = e.clientX
-    let mode: "unknown" | "seek" | "zoom" = "unknown"
+    seek(timeFromClientX(e.clientX))
 
     function onMove(ev: MouseEvent) {
-      const dx = ev.clientX - startX
-
-      // Disambiguate on first significant horizontal movement
-      if (mode === "unknown") {
-        if (Math.abs(dx) > 4) {
-          mode = "zoom"
-          setIsDraggingZoom(true)
-        } else {
-          // Small delta — treat as seek
-          mode = "seek"
-        }
-      }
-
-      if (mode === "zoom") {
-        const delta = ev.clientX - lastX
-        const currentScale = useEditorStore.getState().timelineScale
-        // drag right = zoom out (smaller scale), drag left = zoom in (larger scale)
-        const newScale = currentScale * (1 - delta * 0.005)
-        setTimelineScale(Math.min(TIMELINE_ZOOM.MAX, Math.max(TIMELINE_ZOOM.MIN, newScale)))
-      } else if (mode === "seek") {
-        seek(timeFromClientX(ev.clientX))
-      }
-
-      lastX = ev.clientX
+      seek(timeFromClientX(ev.clientX))
     }
 
-    function onUp(ev: MouseEvent) {
+    function onUp() {
       document.removeEventListener("mousemove", onMove)
       document.removeEventListener("mouseup", onUp)
-      setIsDraggingZoom(false)
-      // If no drag occurred, treat as a click-seek
-      if (mode === "unknown") {
-        seek(timeFromClientX(ev.clientX))
-      }
     }
 
     document.addEventListener("mousemove", onMove)
@@ -106,13 +57,11 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
       ref={rulerRef}
       onMouseDown={handleMouseDown}
       style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 10,
-        height: 28,
+        position: "relative",
+        height: 32,
         minWidth: totalWidth,
         borderBottom: "1px solid var(--color-dark-elevated)",
-        cursor: isDraggingZoom ? "ew-resize" : "pointer",
+        cursor: "pointer",
         userSelect: "none",
         flexShrink: 0,
         backgroundColor: "var(--surface-ruler)",
@@ -131,10 +80,10 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
             pointerEvents: "none",
           }}
         >
-          <div style={{ width: 1, height: isMajor ? 10 : 5, backgroundColor: isMajor ? "var(--color-ruler-tick-major)" : "var(--color-ruler-tick-minor)" }} />
+          <div style={{ width: 1, height: isMajor ? 14 : 8, backgroundColor: isMajor ? "var(--color-ruler-tick-major)" : "var(--color-ruler-tick-minor)" }} />
           {isMajor && (
-            <span style={{ fontSize: 10, color: "var(--color-ruler-label)", marginLeft: 2 }}>
-              {formatTickLabel(t, major)}
+            <span className="text-[10px] text-muted-light ml-0.5 leading-tight">
+              {formatTimecode(t)}
             </span>
           )}
         </div>
@@ -145,7 +94,7 @@ export function PlayheadBar({ totalWidth }: PlayheadBarProps) {
         style={{
           position: "absolute",
           left: TRACK_HEADER_WIDTH + playheadLeft - 6,
-          top: 8,
+          top: 10,
           width: 12,
           height: 12,
           backgroundColor: "var(--color-accent-red)",
