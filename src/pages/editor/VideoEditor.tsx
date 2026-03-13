@@ -4,7 +4,7 @@ import { MediaLibrary } from "../../components/editor/MediaLibrary"
 import { Timeline } from "../../components/editor/Timeline"
 import { Toolbar } from "../../components/editor/Toolbar"
 import { PreviewPlayer } from "../../components/editor/PreviewPlayer"
-import { ColorAdjustmentsPanel } from "../../components/editor/ColorAdjustmentsPanel"
+import { InspectorPanel } from "../../components/editor/InspectorPanel"
 import { useEditorStore } from "../../store/editorStore"
 import { exportProjectJSON, loadProject } from "../../project/projectSerializer"
 import { buildRenderJob } from "../../engine/renderPipeline"
@@ -28,7 +28,7 @@ export default function VideoEditor() {
     }
     return null
   })
-  const showColorPanel = selectedClip?.type === "video" || selectedClip?.type === "image"
+  const showInspector = selectedClip?.type === "video" || selectedClip?.type === "image" || selectedClip?.type === "audio"
 
   async function handleRender() {
     setIsRendering(true)
@@ -130,15 +130,13 @@ export default function VideoEditor() {
         </aside>
 
         {/* Center: preview player */}
-        <div className="flex flex-1 min-h-0 overflow-hidden bg-dark">
+        <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden bg-dark">
           <PreviewPlayer />
         </div>
 
-        {/* Right: color adjustments panel (shown when video/image clip is selected) */}
-        {showColorPanel && selectedClip && (
-          <aside className="w-56 shrink-0 flex flex-col bg-dark-surface border-l border-dark-border overflow-y-auto">
-            <ColorAdjustmentsPanel clipId={selectedClip.id} />
-          </aside>
+        {/* Right: inspector panel (shown when a clip is selected) */}
+        {showInspector && selectedClip && (
+          <InspectorPanel clip={selectedClip} />
         )}
       </div>
 
