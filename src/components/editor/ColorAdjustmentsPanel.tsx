@@ -25,7 +25,7 @@ function SliderRow({ label, hint, value, min, max, step, defaultValue, onChange,
       <div className="flex items-center justify-between mb-0.5">
         <div>
           <span className="text-xs text-muted">{label}</span>
-          <span className="text-xs text-muted block mt-0.5">{hint}</span>
+          <span className="text-[11px] text-muted-light leading-tight block mb-2 opacity-55">{hint}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-2">
           <span className="font-mono text-xs text-muted-light tabular-nums w-10 text-right">
@@ -80,7 +80,7 @@ export function ColorAdjustmentsPanel({ clipId }: ColorAdjustmentsPanelProps) {
   }
 
   return (
-    <div className="px-3 pt-3 pb-5 border-t border-dark-border">
+    <div className="w-full pb-5">
       <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
         Color Adjustments
       </h3>
