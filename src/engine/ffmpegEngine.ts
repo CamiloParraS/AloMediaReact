@@ -2,6 +2,9 @@ import { FFmpeg } from "@ffmpeg/ffmpeg"
 import { fetchFile, toBlobURL } from "@ffmpeg/util"
 import type { RenderJob } from "../project/projectTypes"
 import { buildEqFilter, buildShadowFilter, buildDefinitionFilter } from "../utils/colorAdjustmentFilters"
+import { buildFullAudioFilterChain } from "../utils/audioFilters"
+import { buildAudioSpeedFilter, buildVideoSpeedFilter } from "../utils/speedFilters"
+import { DEFAULT_SPEED } from "../constants/speed"
 
 const ffmpeg = new FFmpeg()
 
@@ -35,7 +38,7 @@ export async function renderJob(
 
   // Separate video and audio segments
   const videoSegments = job.segments.filter(s => s.type === "video")
-  const audioSegments = job.segments.filter(s => s.type === "audio")
+  const audioBearingSegments = job.segments.filter(s => s.type === "audio" || s.type === "video")
 
   const { width: W, height: H } = job.resolution
   const totalDuration = Math.max(
@@ -50,6 +53,8 @@ export async function renderJob(
   for (let i = 0; i < videoSegments.length; i++) {
     const seg = videoSegments[i]
     const vfParts: string[] = []
+    const speedFilter = buildVideoSpeedFilter(seg.speed ?? DEFAULT_SPEED)
+    if (speedFilter) vfParts.push(speedFilter)
     if (!isMultiTrack && seg.colorAdjustments) {
       const eq = buildEqFilter(seg.colorAdjustments)
       const shadow = buildShadowFilter(seg.colorAdjustments)
@@ -176,7 +181,7 @@ export async function renderJob(
 
   const outputFile = `output.${job.outputFormat}`
 
-  if (audioSegments.length === 0) {
+  if (audioBearingSegments.length === 0) {
     // No audio — just copy the video track to the output
     if (videoSegments.length > 0) {
       await ffmpeg.exec(["-i", videoTrackFile, "-c", "copy", outputFile])
@@ -184,19 +189,45 @@ export async function renderJob(
       throw new Error("No video or audio segments to render.")
     }
   } else {
-    // Build amix filter for audio segments
+    const hasVideoOutput = videoSegments.length > 0
+    const audioInputIndexOffset = hasVideoOutput ? 1 : 0
+
+    // Build audio input args
     const audioInputArgs: string[] = []
-    for (const seg of audioSegments) {
+    for (const seg of audioBearingSegments) {
       audioInputArgs.push("-i", seg.mediaId)
     }
 
-    const volumeFilter = audioSegments
-      .map((seg, i) => `[${i + 1}:a]volume=${seg.volume ?? 1}[a${i}]`)
-      .join(";")
-    const mixInputs = audioSegments.map((_, i) => `[a${i}]`).join("")
-    const filterComplex = `${volumeFilter};${mixInputs}amix=inputs=${audioSegments.length}[aout]`
+    // Authority: buildFullAudioFilterChain is the single path for all audio processing
+    // (volume, mute, fade, balance). When audioConfig is present on a segment it is used
+    // exclusively. When audioConfig is absent (legacy segments), a simple volume= filter
+    // is the fallback. These two paths are mutually exclusive per segment.
+    const audioFilterParts: string[] = []
+    const audioInputLabels: string[] = []
+    for (let i = 0; i < audioBearingSegments.length; i++) {
+      const seg = audioBearingSegments[i]
+      const duration = seg.timelineEnd - seg.timelineStart
+      const toneFilterChain = seg.audioConfig
+        ? buildFullAudioFilterChain(seg.audioConfig, duration)
+        : (seg.volume != null && Math.abs(seg.volume - 1) > 0.001 ? `volume=${seg.volume}` : null)
+      const speedFilter = buildAudioSpeedFilter(seg.speed ?? DEFAULT_SPEED)
+      const segmentDelayMs = Math.max(0, Math.round(seg.timelineStart * 1000))
+      const segmentFilters: string[] = [
+        `atrim=start=${seg.mediaStart}:end=${seg.mediaEnd}`,
+        "asetpts=PTS-STARTPTS",
+      ]
+      if (speedFilter) segmentFilters.push(speedFilter)
+      if (toneFilterChain) segmentFilters.push(toneFilterChain)
+      segmentFilters.push(`adelay=${segmentDelayMs}|${segmentDelayMs}`)
 
-    const videoInputArgs = videoSegments.length > 0
+      audioFilterParts.push(`[${i + audioInputIndexOffset}:a]${segmentFilters.join(",")}[a${i}]`)
+      audioInputLabels.push(`[a${i}]`)
+    }
+
+    const mixInputs = audioInputLabels.join("")
+    const filterComplex = `${audioFilterParts.join(";")};${mixInputs}amix=inputs=${audioBearingSegments.length}[aout]`
+
+    const videoInputArgs = hasVideoOutput
       ? ["-i", videoTrackFile]
       : []
 
@@ -204,8 +235,8 @@ export async function renderJob(
       ...videoInputArgs,
       ...audioInputArgs,
       "-filter_complex", filterComplex,
-      ...(videoSegments.length > 0 ? ["-map", "0:v", "-map", "[aout]"] : ["-map", "[aout]"]),
-      ...(videoSegments.length > 0 && !isMultiTrack ? ["-c:v", "copy"] : []),
+      ...(hasVideoOutput ? ["-map", "0:v", "-map", "[aout]"] : ["-map", "[aout]"]),
+      ...(hasVideoOutput && !isMultiTrack ? ["-c:v", "copy"] : []),
       "-c:a", "aac",
       outputFile,
     ])
