@@ -29,6 +29,14 @@ export interface ColorAdjustments {
   definition?: number // -1.0 to 1.0, default 0 (local midtone contrast via unsharp)
 }
 
+export interface AudioConfig {
+  volume: number           // 0.0 to 2.0, default 1.0 (1.0 = unity gain, no change)
+  muted: boolean           // default false
+  fadeInDuration: number   // seconds, 0.0 to 10.0, default 0
+  fadeOutDuration: number  // seconds, 0.0 to 10.0, default 0
+  balance: number          // -1.0 (full left) to 1.0 (full right), default 0 (center)
+}
+
 export interface BaseClip {
   id: string
   trackId: string
@@ -44,8 +52,10 @@ export interface VideoClip extends BaseClip {
   mediaStart: number // seconds (integer-ms precision)
   mediaEnd: number   // seconds (integer-ms precision)
   volume: number
+  speed?: number
   transform: Transform
   colorAdjustments?: ColorAdjustments
+  audioConfig?: AudioConfig
 }
 
 export interface ImageClip extends BaseClip {
@@ -67,6 +77,8 @@ export interface AudioClip extends BaseClip {
   mediaStart: number // seconds (integer-ms precision)
   mediaEnd: number   // seconds (integer-ms precision)
   volume: number
+  speed?: number
+  audioConfig?: AudioConfig
 }
 
 export type Clip = VideoClip | ImageClip | TextClip | AudioClip
@@ -117,11 +129,13 @@ export interface RenderSegment {
   mediaEnd: number
   timelineStart: number
   timelineEnd: number
+  speed: number
   type: "video" | "audio" | "image" | "text"
   transform?: Transform
   volume?: number
   trackOrder?: number
   colorAdjustments?: ColorAdjustments
+  audioConfig?: AudioConfig
 }
 
 export interface RenderJob {
