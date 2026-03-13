@@ -39,7 +39,21 @@ export function MediaCard({ media, objectUrl, proxyStatus }: { media: Media; obj
   return (
     <div
       draggable
-      onDragStart={e => e.dataTransfer.setData("mediaId", media.id)}
+      onDragStart={e => {
+        const durationSeconds = media.duration ?? 5
+        e.dataTransfer.setData("mediaId", media.id)
+        e.dataTransfer.setData("clipDuration", String(durationSeconds))
+        window.dispatchEvent(new CustomEvent("alomedia:drag-start", {
+          detail: {
+            kind: "media",
+            mediaId: media.id,
+            durationSeconds,
+          },
+        }))
+      }}
+      onDragEnd={() => {
+        window.dispatchEvent(new CustomEvent("alomedia:drag-end"))
+      }}
       className="relative aspect-square rounded-lg border border-dark-border bg-dark-card hover:border-accent-red/70 hover:bg-dark-elevated cursor-pointer editor-transition overflow-hidden group"
     >
       {/* Thumbnail — top ~75% */}
