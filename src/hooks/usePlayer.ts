@@ -1,21 +1,7 @@
 import { useCallback, useRef } from "react"
 import { useEditorStore } from "../store/editorStore"
-import { getProjectDuration, CLIP_EPSILON } from "../utils/time"
+import { getProjectDuration } from "../utils/time"
 import { STORE_SYNC_INTERVAL_MS } from "../constants/timeline"
-
-/** Returns true when there is no clip of any type covering the given time (a "gap").
- *  Checks ALL tracks (video + audio) so playback continues as long as any clip is active.
- *  Uses CLIP_EPSILON on the right edge to prevent false gaps at exact clip boundaries
- *  caused by sub-millisecond float arithmetic in the RAF timing loop. */
-function isInGap(time: number): boolean {
-  // Time zero is always a valid playback position — never treat it as a gap
-  if (time <= 0) return false
-
-  const { project } = useEditorStore.getState()
-  const allClips = project.tracks.flatMap(t => t.clips)
-  if (allClips.length === 0) return false
-  return !allClips.some(c => c.timelineStart <= time && time < c.timelineEnd + CLIP_EPSILON)
-}
 
 // Shared refs — live playhead and playing flag readable from RAF without React re-renders
 const playheadRef = { current: 0 }
@@ -58,13 +44,6 @@ export function usePlayer() {
         return
       }
 
-      if (isInGap(playheadRef.current)) {
-        isPlayingRef.current = false
-        useEditorStore.getState().setPlayhead(playheadRef.current)
-        useEditorStore.getState().setIsPlaying(false)
-        return
-      }
-
       // Call the per-frame sync callback (media element sync) — no React involved
       onFrameRef.current?.(playheadRef.current)
 
@@ -81,6 +60,9 @@ export function usePlayer() {
   }, [])
 
   const pause = useCallback(() => {
+    if (!isPlayingRef.current && rafRef.current === undefined) {
+      return
+    }
     if (rafRef.current !== undefined) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = undefined
