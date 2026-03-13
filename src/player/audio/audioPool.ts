@@ -1,3 +1,5 @@
+import { destroyAudioContext } from "./audioSync"
+
 /** Incrementally syncs audio elements with the current set of audio track IDs. */
 export function syncAudioPool(
   pool: Map<string, HTMLAudioElement>,
@@ -10,6 +12,7 @@ export function syncAudioPool(
     if (!needed.has(trackId)) {
       el.pause()
       if (el.parentNode) el.parentNode.removeChild(el)
+      destroyAudioContext(trackId)
       pool.delete(trackId)
     }
   }
@@ -27,9 +30,10 @@ export function syncAudioPool(
 
 /** Destroys all audio elements in the pool (call on unmount). */
 export function destroyAudioPool(pool: Map<string, HTMLAudioElement>): void {
-  for (const [, el] of pool) {
+  for (const [trackId, el] of pool) {
     el.pause()
     if (el.parentNode) el.parentNode.removeChild(el)
+    destroyAudioContext(trackId)
   }
   pool.clear()
 }
