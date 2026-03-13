@@ -216,6 +216,7 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
             isSelected={selectedClipId === clip.id}
             onSelect={setSelectedClip}
             onDragStart={handleClipDragStart}
+            onDragEnd={() => setSnapIndicatorX(null)}
           />
         ))}
       </div>

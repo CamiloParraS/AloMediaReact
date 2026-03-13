@@ -3,7 +3,9 @@ import { generateId } from "../utils/id"
 import { TIMELINE_ZOOM } from "../constants/timeline"
 import { getInsertionIndex } from "../utils/tracks"
 import { toMs, toSeconds } from "../utils/time"
-import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType, Transform, ColorAdjustments } from "../project/projectTypes"
+import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType, Transform, ColorAdjustments, AudioConfig } from "../project/projectTypes"
+import { DEFAULT_AUDIO_CONFIG } from "../constants/audioConfig"
+import { DEFAULT_SPEED, MAX_SPEED, MIN_SPEED } from "../constants/speed"
 
 export interface ProxyState {
   status: 'pending' | 'ready' | 'error'
@@ -27,6 +29,8 @@ type StoreActions = {
   updateClipTransform: (clipId: string, transform: Partial<Transform>) => void
   commitTransform: (clipId: string) => void
   updateClipColorAdjustments: (clipId: string, adjustments: ColorAdjustments) => void
+  updateClipAudioConfig: (clipId: string, config: Partial<AudioConfig>) => void
+  setClipSpeed: (clipId: string, speed: number) => void
   setPlayhead: (time: number) => void
   setIsPlaying: (value: boolean) => void
   setTimelineScale: (scale: number) => void
@@ -135,12 +139,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   addClip(clip: Clip): void {
     get().pushHistory("Add clip")
+    // Initialize audioConfig for video and audio clips if not already set
+    const prepared: Clip = (() => {
+      if (clip.type === "video" || clip.type === "audio") {
+        const clampedSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, clip.speed ?? DEFAULT_SPEED))
+        return {
+          ...clip,
+          speed: clampedSpeed,
+          audioConfig: clip.audioConfig ?? { ...DEFAULT_AUDIO_CONFIG },
+        }
+      }
+      return clip
+    })()
     set(state => ({
       project: {
         ...state.project,
         tracks: state.project.tracks.map(track =>
           track.id === clip.trackId
-            ? { ...track, clips: [...track.clips, clip] }
+            ? { ...track, clips: [...track.clips, prepared] }
             : track
         ),
       },
@@ -308,6 +324,75 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         })),
       },
     }))
+  },
+
+  updateClipAudioConfig(clipId: string, config: Partial<AudioConfig>): void {
+    get().pushHistory("Audio config")
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            if (clip.id !== clipId) return clip
+            if (clip.type !== "video" && clip.type !== "audio") return clip
+            const existing = (clip as any).audioConfig ?? { ...DEFAULT_AUDIO_CONFIG }
+            return { ...clip, audioConfig: { ...existing, ...config } }
+          }),
+        })),
+      },
+    }))
+  },
+
+  setClipSpeed(clipId: string, speed: number): void {
+    const state = get()
+    const clipExists = state.project.tracks.some(track =>
+      track.clips.some(c => c.id === clipId && (c.type === "video" || c.type === "audio")),
+    )
+    if (!clipExists) return
+
+    const clampedSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed))
+
+    set(curr => ({
+      project: {
+        ...curr.project,
+        tracks: curr.project.tracks.map(track => {
+          const targetClip = track.clips.find(c => c.id === clipId)
+          if (!targetClip || (targetClip.type !== "video" && targetClip.type !== "audio")) {
+            return track
+          }
+
+          const baseDuration = targetClip.mediaEnd - targetClip.mediaStart
+          const computedTimelineEnd = toSeconds(toMs(targetClip.timelineStart + (baseDuration / clampedSpeed)))
+          const nextTimelineStart = track.clips
+            .filter(c => c.id !== clipId && c.timelineStart >= targetClip.timelineStart)
+            .reduce<number | null>((next, c) => {
+              if (next == null) return c.timelineStart
+              return Math.min(next, c.timelineStart)
+            }, null)
+
+          const maxEnd = nextTimelineStart ?? Number.POSITIVE_INFINITY
+          const clampedTimelineEnd = toSeconds(
+            toMs(Math.max(targetClip.timelineStart, Math.min(computedTimelineEnd, maxEnd))),
+          )
+
+          return {
+            ...track,
+            clips: track.clips.map(clip => {
+              if (clip.id !== clipId) return clip
+              if (clip.type !== "video" && clip.type !== "audio") return clip
+              return {
+                ...clip,
+                speed: clampedSpeed,
+                timelineEnd: clampedTimelineEnd,
+              }
+            }),
+          }
+        }),
+      },
+    }))
+
+    get().pushHistory("Set clip speed")
   },
 
   splitClip(clipId: string, time: number): void {

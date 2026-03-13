@@ -1,8 +1,31 @@
+// Minimum pixels per second (most zoomed out — around 1 hour in ~1800px).
+export const MIN_PIXELS_PER_SECOND = 0.5
+
+// Maximum pixels per second (most zoomed in — individual seconds visible).
+export const MAX_PIXELS_PER_SECOND = 200
+
+// Default scale: minute-oriented timeline reading.
+export const DEFAULT_PIXELS_PER_SECOND = 10
+
+// Multiplicative zoom step for wheel interactions.
+export const ZOOM_STEP = 1.2
+
+// Screen-space snap threshold used when dragging clips on the timeline.
+export const SNAP_THRESHOLD_PX = 10
+
+// Candidate major gridline intervals in seconds.
+export const GRID_INTERVALS_SECONDS = [
+  1, 2, 5, 10, 15, 30,
+  60, 120, 300, 600, 1800,
+  3600,
+] as const
+
+// Compatibility alias used by existing store/actions.
 export const TIMELINE_ZOOM = {
-  MIN: 1,           // 1px per second (most zoomed out)
-  MAX: 3600,        // 3600px per second (most zoomed in)
-  DEFAULT: 300,     // 300px per second — ~5 min fits in a ~1080px wide panel
-  STEP_BUTTON: 60,  // increment per toolbar button click
+  MIN: MIN_PIXELS_PER_SECOND,
+  MAX: MAX_PIXELS_PER_SECOND,
+  DEFAULT: DEFAULT_PIXELS_PER_SECOND,
+  STEP_BUTTON: ZOOM_STEP,
 } as const
 
 /** How many milliseconds before the current clip ends to trigger buffer preparation. */

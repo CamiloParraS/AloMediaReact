@@ -1,4 +1,5 @@
-import type { Clip, Project, RenderJob, RenderSegment } from "./projectTypes"
+import type { Clip, Project, RenderJob, RenderSegment } from "../project/projectTypes"
+import { DEFAULT_SPEED } from "../constants/speed"
 
 function clipToSegment(clip: Clip): RenderSegment {
   if (clip.type === "video") {
@@ -8,10 +9,12 @@ function clipToSegment(clip: Clip): RenderSegment {
       mediaEnd: clip.mediaEnd,
       timelineStart: clip.timelineStart,
       timelineEnd: clip.timelineEnd,
+      speed: clip.speed ?? DEFAULT_SPEED,
       type: "video",
       transform: clip.transform,
-      volume: clip.volume,
+      volume: clip.audioConfig?.volume ?? clip.volume,
       colorAdjustments: clip.colorAdjustments,
+      audioConfig: clip.audioConfig,
     }
   }
 
@@ -22,8 +25,10 @@ function clipToSegment(clip: Clip): RenderSegment {
       mediaEnd: clip.mediaEnd,
       timelineStart: clip.timelineStart,
       timelineEnd: clip.timelineEnd,
+      speed: clip.speed ?? DEFAULT_SPEED,
       type: "audio",
-      volume: clip.volume,
+      volume: clip.audioConfig?.volume ?? clip.volume,
+      audioConfig: clip.audioConfig,
     }
   }
 
@@ -34,6 +39,7 @@ function clipToSegment(clip: Clip): RenderSegment {
       mediaEnd: clip.timelineEnd - clip.timelineStart,
       timelineStart: clip.timelineStart,
       timelineEnd: clip.timelineEnd,
+      speed: DEFAULT_SPEED,
       type: "image",
       transform: clip.transform,
       colorAdjustments: clip.colorAdjustments,
@@ -47,6 +53,7 @@ function clipToSegment(clip: Clip): RenderSegment {
     mediaEnd: clip.timelineEnd - clip.timelineStart,
     timelineStart: clip.timelineStart,
     timelineEnd: clip.timelineEnd,
+    speed: DEFAULT_SPEED,
     type: "text",
     transform: clip.transform,
   }

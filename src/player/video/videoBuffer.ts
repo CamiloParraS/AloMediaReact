@@ -2,6 +2,7 @@ import type { Track, VideoClip } from "../../project/projectTypes"
 import { PRELOAD_LOOKAHEAD_MS, DRIFT_CORRECTION_THRESHOLD_S } from "../../constants/timeline"
 import { getActiveVideoClip, getNextVideoClip } from "../timeline/activeClipResolver"
 import { applyTransformToEl, applyColorAdjustmentsToEl } from "../render/transformUtils"
+import { DEFAULT_SPEED } from "../../constants/speed"
 
 export interface BufferState {
   activeClipId: string | null
@@ -64,6 +65,7 @@ export class VideoBufferManager {
     const url = getUrl(clip.mediaId)
     if (!url) return
     el.src = url
+    el.playbackRate = clip.speed ?? DEFAULT_SPEED
     seekEl(el, clip.mediaStart)
     applyTransformToEl(el, clip.transform)
     applyColorAdjustmentsToEl(el, clip.colorAdjustments)
@@ -95,6 +97,7 @@ export class VideoBufferManager {
       bufferEl.src = targetSrc
       this.state.bufferedMediaId = nextClip.mediaId
     }
+    bufferEl.playbackRate = nextClip.speed ?? DEFAULT_SPEED
     const PREROLL = 0.03
     seekEl(bufferEl, Math.max(0, nextClip.mediaStart - PREROLL))
     bufferEl.pause()
@@ -119,6 +122,7 @@ export class VideoBufferManager {
       incomingEl.src = targetSrc
       this.state.bufferedMediaId = nextClip.mediaId
     }
+    incomingEl.playbackRate = nextClip.speed ?? DEFAULT_SPEED
 
     // Skip seek when prebuffered — the decoder is already positioned
     if (!wasPrebuffered) {
@@ -165,22 +169,26 @@ export class VideoBufferManager {
         this.swapBuffers(activeVideoClip, ph, getUrl, getIsPlaying)
         this.clipSeekDone = activeVideoClip.id
       } else if (playing) {
+        const clipSpeed = activeVideoClip.speed ?? DEFAULT_SPEED
+        const activeEl = this.getActiveEl()
+        activeEl.playbackRate = clipSpeed
         if (this.clipSeekDone !== activeVideoClip.id) {
           this.clipSeekDone = activeVideoClip.id
-          const mediaTime = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart)
-          seekEl(this.getActiveEl(), mediaTime)
+          const mediaTime = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart) * clipSpeed
+          seekEl(activeEl, mediaTime)
         } else {
-          const el = this.getActiveEl()
-          const expected = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart)
-          if (Math.abs(el.currentTime - expected) > DRIFT_CORRECTION_THRESHOLD_S) {
-            seekEl(el, expected)
+          const expected = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart) * clipSpeed
+          if (Math.abs(activeEl.currentTime - expected) > DRIFT_CORRECTION_THRESHOLD_S) {
+            seekEl(activeEl, expected)
           }
         }
         this.prepareBuffer(ph, activeVideoClip, tracks, getUrl)
       } else {
         // Paused / scrubbing — always sync exactly
         const el = this.getActiveEl()
-        el.currentTime = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart)
+        const clipSpeed = activeVideoClip.speed ?? DEFAULT_SPEED
+        el.playbackRate = clipSpeed
+        el.currentTime = activeVideoClip.mediaStart + (ph - activeVideoClip.timelineStart) * clipSpeed
         applyTransformToEl(el, activeVideoClip.transform)
         applyColorAdjustmentsToEl(el, activeVideoClip.colorAdjustments)
         this.clipSeekDone = null

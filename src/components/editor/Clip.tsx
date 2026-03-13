@@ -9,9 +9,10 @@ interface ClipProps {
   isSelected: boolean
   onSelect: (clipId: string) => void
   onDragStart: (e: DragEvent<HTMLDivElement>, clipId: string) => void
+  onDragEnd: () => void
 }
 
-export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }: ClipProps) {
+export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart, onDragEnd }: ClipProps) {
   const playhead = useEditorStore(s => s.playhead)
   const splitClip = useEditorStore(s => s.splitClip)
   const removeClip = useEditorStore(s => s.removeClip)
@@ -79,8 +80,16 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
     <>
       <div
         draggable
-        onDragStart={e => { setIsDragging(true); onDragStart(e, clip.id) }}
-        onDragEnd={() => setIsDragging(false)}
+        onDragStart={e => {
+          setIsDragging(true)
+          e.dataTransfer.setData("clipDuration", String(clip.timelineEnd - clip.timelineStart))
+          onDragStart(e, clip.id)
+        }}
+        onDragEnd={() => {
+          setIsDragging(false)
+          onDragEnd()
+          window.dispatchEvent(new CustomEvent("alomedia:drag-end"))
+        }}
         onClick={() => onSelect(clip.id)}
         onContextMenu={handleContextMenu}
         className={`hover:brightness-110 transition-[filter,opacity] duration-150 ${isDragging ? "opacity-70" : ""}`}

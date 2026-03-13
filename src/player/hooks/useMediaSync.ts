@@ -12,6 +12,7 @@ import { syncAudioElements } from "../audio/audioSync"
 import { syncAudioPool, destroyAudioPool } from "../audio/audioPool"
 import { CLIP_EPSILON } from "../../utils/time"
 import { DRIFT_CORRECTION_THRESHOLD_S } from "../../constants/timeline"
+import { DEFAULT_SPEED } from "../../constants/speed"
 
 interface UseMediaSyncParams {
   onFrameRef: MutableRefObject<((ph: number) => void) | null>
@@ -134,7 +135,9 @@ export function useMediaSync({
         el.pause()
         continue
       }
-      const mediaTime = clip.mediaStart + (ph - clip.timelineStart)
+      const clipSpeed = clip.speed ?? DEFAULT_SPEED
+      el.playbackRate = clipSpeed
+      const mediaTime = clip.mediaStart + (ph - clip.timelineStart) * clipSpeed
       if (playing) {
         if (el.paused) {
           el.currentTime = Math.max(clip.mediaStart, mediaTime)
@@ -199,6 +202,7 @@ export function useMediaSync({
     for (const clip of activeAudioClips) {
       const el = audioElementsRef.current.get(clip.trackId)
       if (!el) continue
+      el.playbackRate = clip.speed ?? DEFAULT_SPEED
       if (isPlaying) {
         el.muted = isMuted
         el.volume = volume

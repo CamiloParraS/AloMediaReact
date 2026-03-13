@@ -13,6 +13,7 @@ import { TransformOverlay } from "./TransformOverlay"
 import { IconButton } from "../ui/IconButton"
 import { RangeSlider } from "../ui/RangeSlider"
 import { getActiveVideoClip } from "../../player/timeline/activeClipResolver"
+import { DEFAULT_SPEED } from "../../constants/speed"
 
 function formatTime(seconds: number): string {
   seconds = Math.max(0, isFinite(seconds) ? seconds : 0)
@@ -162,9 +163,12 @@ export function PreviewPlayer() {
             {/* Secondary video clips from other tracks */}
             {secondaryVideoClips.map(clip => (
               <video
-                key={clip.mediaId}
+                key={clip.id}
                 ref={el => {
-                  if (el) secondaryVideoElemsRef.current.set(clip.id, el)
+                  if (el) {
+                    el.playbackRate = clip.speed ?? DEFAULT_SPEED
+                    secondaryVideoElemsRef.current.set(clip.id, el)
+                  }
                   else secondaryVideoElemsRef.current.delete(clip.id)
                 }}
                 src={getPlaybackUrl(clip.mediaId)}

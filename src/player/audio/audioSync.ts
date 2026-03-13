@@ -1,9 +1,17 @@
-import type { AudioClip, VideoClip } from "../../project/projectTypes"
+import type { AudioClip, VideoClip, AudioConfig } from "../../project/projectTypes"
 import type { ClipIndex } from "../timeline/clipLookup"
 import { lookupActiveClips } from "../timeline/clipLookup"
 import { DRIFT_CORRECTION_THRESHOLD_S } from "../../constants/timeline"
+import { DEFAULT_AUDIO_CONFIG } from "../../constants/audioConfig"
+import { DEFAULT_SPEED } from "../../constants/speed"
 
 type AudioBearingClip = AudioClip | VideoClip
+
+// Web Audio contexts and nodes are cached per track ID so they persist across frames
+const audioContexts = new Map<string, AudioContext>()
+const mediaElementSources = new Map<string, MediaElementAudioSourceNode>()
+const gainNodes = new Map<string, GainNode>()
+const pannerNodes = new Map<string, StereoPannerNode>()
 
 /**
  * Synchronises audio elements to the playhead. Called once per RAF frame.
@@ -14,6 +22,7 @@ type AudioBearingClip = AudioClip | VideoClip
  * - Pauses audio elements whose clips are no longer active.
  * - Seeks newly-active clips to the correct media time.
  * - Applies drift correction to running clips.
+ * - Applies per-clip audioConfig settings (volume, mute, balance) via Web Audio API.
  *
  * @returns The set of active audio clip IDs (pass back as `prevActiveIds` next frame).
  */
@@ -38,9 +47,23 @@ export function syncAudioElements(
     currentTimes.set(trackId, el.currentTime)
   }
 
-  // Phase 2 pause inactive
+  // Phase 2 pause inactive and clean up Web Audio nodes
   for (const [trackId, el] of audioElements) {
-    if (!activeTrackIds.has(trackId)) el.pause()
+    if (!activeTrackIds.has(trackId)) {
+      el.pause()
+      // Disconnect Web Audio nodes
+      const ctx = audioContexts.get(trackId)
+      const gainNode = gainNodes.get(trackId)
+      const pannerNode = pannerNodes.get(trackId)
+      if (gainNode && ctx) {
+        gainNode.disconnect()
+        gainNodes.delete(trackId)
+      }
+      if (pannerNode && ctx) {
+        pannerNode.disconnect()
+        pannerNodes.delete(trackId)
+      }
+    }
   }
 
   const activeIds = new Set(activeAudioClips.map(c => c.id))
@@ -52,13 +75,16 @@ export function syncAudioElements(
     if (!el) continue
     const url = getObjectUrl(clip.mediaId)
     if (url && el.src !== url) el.src = url
-    const mediaTime = clip.mediaStart + (ph - clip.timelineStart)
+    const clipSpeed = clip.speed ?? DEFAULT_SPEED
+    el.playbackRate = clipSpeed
+    const mediaTime = clip.mediaStart + (ph - clip.timelineStart) * clipSpeed
+    const clipConfig = clip.audioConfig ?? DEFAULT_AUDIO_CONFIG
 
     if (newlyActive.has(clip.id)) {
       el.currentTime = Math.max(0, mediaTime)
       if (playing) {
-        el.muted = isMuted
-        el.volume = volume
+        // Apply audio config + global settings
+        applyAudioConfig(el, clipConfig, isMuted, volume, clip.trackId)
         el.play().catch(() => {})
       }
     } else if (!playing) {
@@ -68,8 +94,213 @@ export function syncAudioElements(
       if (Math.abs(current - mediaTime) > DRIFT_CORRECTION_THRESHOLD_S) {
         el.currentTime = mediaTime
       }
+      // Reapply audio config during playback (handles changes via store updates)
+      applyAudioConfig(el, clipConfig, isMuted, volume, clip.trackId)
     }
   }
 
   return activeIds
+}
+
+/**
+ * Applies audioConfig to an audio element, combining with global mute/volume.
+ * Uses Web Audio API for advanced features (volume > 1.0, balance, potentially fades).
+ */
+function applyAudioConfig(
+  el: HTMLAudioElement,
+  config: AudioConfig,
+  globalMute: boolean,
+  globalVolume: number,
+  trackId: string,
+): void {
+  // Determine if element is muted at all levels
+  const isEffectivelyMuted = globalMute || config.muted
+  el.muted = isEffectivelyMuted
+
+  // If muted, don't bother setting up Web Audio gains
+  if (isEffectivelyMuted) {
+    el.volume = 0
+    return
+  }
+
+  // Combine global volume with clip volume
+  const combinedVolume = globalVolume * config.volume
+
+  // For normal volumes (0-1), native element.volume is sufficient
+  // For volumes > 1.0, we need Web Audio API GainNode to boost
+  if (combinedVolume <= 1.0) {
+    el.volume = Math.max(0, Math.min(1, combinedVolume))
+    // For balance at normal volumes, we still need panner node
+    if (Math.abs(config.balance) > 0.001) {
+      setupPannerOnly(el, config.balance, trackId)
+    } else {
+      disconnectPanNode(trackId)
+    }
+    return
+  }
+
+  // For combinedVolume > 1.0, use Web Audio API
+  setupGainNode(el, combinedVolume, config.balance, trackId)
+}
+
+/**
+ * Sets up and maintains a Web Audio GainNode + PannerNode for volume boost and balance.
+ */
+function setupGainNode(
+  el: HTMLAudioElement,
+  volume: number,
+  balance: number,
+  trackId: string,
+): void {
+  let ctx = audioContexts.get(trackId)
+  let source = mediaElementSources.get(trackId)
+  let gainNode = gainNodes.get(trackId)
+  let pannerNode = pannerNodes.get(trackId)
+
+  // Create or resume audio context
+  if (!ctx) {
+    ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    audioContexts.set(trackId, ctx)
+  }
+
+  // Resume context if suspended (required by browser autoplay policy)
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {})
+  }
+
+  // Create media element source once (cannot be created twice for same element)
+  if (!source) {
+    try {
+      const newSource = ctx.createMediaElementSource(el)
+      mediaElementSources.set(trackId, newSource)
+      source = newSource
+    } catch (e) {
+      // Source already created for this element, continue
+      return
+    }
+  }
+
+  // Create gain node if needed
+  if (!gainNode) {
+    gainNode = ctx.createGain()
+    source.connect(gainNode)
+    gainNodes.set(trackId, gainNode)
+  }
+
+  // Set gain value
+  gainNode.gain.setValueAtTime(Math.max(0, Math.min(2, volume)), ctx.currentTime)
+
+  // Apply balance if needed
+  if (Math.abs(balance) > 0.001) {
+    if (!pannerNode) {
+      pannerNode = ctx.createStereoPanner()
+      
+      // Disconnect old chain and rebuild with panner
+      gainNode.disconnect()
+      gainNode.connect(pannerNode)
+      pannerNode.connect(ctx.destination)
+      pannerNodes.set(trackId, pannerNode)
+    }
+    pannerNode.pan.setValueAtTime(Math.max(-1, Math.min(1, balance)), ctx.currentTime)
+  } else {
+    // No balance needed
+    if (pannerNode) {
+      // Disconnect panner and reconnect gain directly
+      pannerNode.disconnect()
+      gainNode.disconnect()
+      gainNode.connect(ctx.destination)
+      pannerNodes.delete(trackId)
+    } else if (!gainNode.numberOfOutputs) {
+      // First time, connect gain to destination
+      gainNode.connect(ctx.destination)
+    }
+  }
+}
+
+/**
+ * Sets up a stereo panner node for balance when using normal element.volume.
+ * Does not use gain node, only panner connected to element's default output.
+ */
+function setupPannerOnly(
+  el: HTMLAudioElement,
+  balance: number,
+  trackId: string,
+): void {
+  let ctx = audioContexts.get(trackId)
+  let source = mediaElementSources.get(trackId)
+  let pannerNode = pannerNodes.get(trackId)
+
+  if (!ctx) {
+    ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    audioContexts.set(trackId, ctx)
+  }
+
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {})
+  }
+
+  if (!source) {
+    try {
+      const newSource = ctx.createMediaElementSource(el)
+      mediaElementSources.set(trackId, newSource)
+      source = newSource
+    } catch (e) {
+      return
+    }
+  }
+
+  if (!pannerNode) {
+    pannerNode = ctx.createStereoPanner()
+    source.connect(pannerNode)
+    pannerNode.connect(ctx.destination)
+    pannerNodes.set(trackId, pannerNode)
+  }
+
+  pannerNode.pan.setValueAtTime(Math.max(-1, Math.min(1, balance)), ctx.currentTime)
+}
+
+/**
+ * Disconnects the panning node if it exists, leaving gain in place.
+ */
+function disconnectPanNode(trackId: string): void {
+  const pannerNode = pannerNodes.get(trackId)
+  const gainNode = gainNodes.get(trackId)
+  if (!pannerNode || !gainNode) return
+  try {
+    pannerNode.disconnect()
+    gainNode.disconnect()
+    const ctx = audioContexts.get(trackId)
+    if (ctx) {
+      gainNode.connect(ctx.destination)
+    }
+    pannerNodes.delete(trackId)
+  } catch (e) {
+    // Silently ignore errors
+  }
+}
+
+/**
+ * Destroys all Web Audio nodes for a track and reconnects element to default output.
+ */
+export function destroyAudioContext(trackId: string): void {
+  const gainNode = gainNodes.get(trackId)
+  const pannerNode = pannerNodes.get(trackId)
+  const source = mediaElementSources.get(trackId)
+  try {
+    if (pannerNode) {
+      pannerNode.disconnect()
+      pannerNodes.delete(trackId)
+    }
+    if (gainNode) {
+      gainNode.disconnect()
+      gainNodes.delete(trackId)
+    }
+    if (source) {
+      source.disconnect()
+      mediaElementSources.delete(trackId)
+    }
+  } catch (e) {
+    // Silently ignore errors during cleanup
+  }
+  audioContexts.delete(trackId)
 }
