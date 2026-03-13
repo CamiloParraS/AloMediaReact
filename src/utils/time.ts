@@ -1,4 +1,6 @@
+import type { RefObject } from "react"
 import type { Track } from "../project/projectTypes"
+import { DEFAULT_PIXELS_PER_SECOND, GRID_INTERVALS_SECONDS } from "../constants/timeline"
 
 // Width of the track header column — must be consistent across Track, Timeline, PlayheadBar
 export const TRACK_HEADER_WIDTH = 120
@@ -7,12 +9,48 @@ export function getProjectDuration(tracks: Track[]): number {
   return Math.max(0, ...tracks.flatMap(t => t.clips.map(c => c.timelineEnd)))
 }
 
+export function formatTimecode(seconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const secs = totalSeconds % 60
+  return [hours, minutes, secs].map(v => String(v).padStart(2, "0")).join(":")
+}
+
+export function selectGridInterval(pixelsPerSecond: number): number {
+  // Keep default view minute-oriented while allowing coarse intervals when zoomed out.
+  const minimumSpacingPx = pixelsPerSecond <= 2 ? 300 : 500
+
+  if (Math.abs(pixelsPerSecond - DEFAULT_PIXELS_PER_SECOND) < 0.001) {
+    return 60
+  }
+
+  for (const interval of GRID_INTERVALS_SECONDS) {
+    if (interval * pixelsPerSecond >= minimumSpacingPx) {
+      return interval
+    }
+  }
+  return 3600
+}
+
 export function pxToTime(px: number, scale: number): number {
   return px / scale
 }
 
 export function timeToPx(time: number, scale: number): number {
   return time * scale
+}
+
+export function clientXToTime(
+  clientX: number,
+  rulerRef: RefObject<HTMLDivElement | null>,
+  scrollLeft: number,
+  pixelsPerSecond: number
+): number {
+  if (!rulerRef.current) return 0
+  const rect = rulerRef.current.getBoundingClientRect()
+  const pixelOffset = clientX - rect.left + scrollLeft
+  return Math.max(0, pixelOffset / pixelsPerSecond)
 }
 
 /** 1-millisecond tolerance used when matching clip boundaries — prevents float drift from hiding clips. */
