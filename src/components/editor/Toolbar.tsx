@@ -9,12 +9,17 @@ import {
   ZoomOut,
   Maximize2,
   Magnet,
+  Plus,
+  Film,
+  Music,
 } from "lucide-react"
 import { useEditorStore } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
 import { TIMELINE_ZOOM } from "../../constants/timeline"
 import { IconButton } from "../ui/IconButton"
 import { Divider } from "../ui/Divider"
+import { LabelButton } from "../ui/LabelButton"
+import { Dropdown } from "../ui/Dropdown"
 
 export function Toolbar() {
   const selectedClipId = useEditorStore(s => s.selectedClipId)
@@ -23,6 +28,7 @@ export function Toolbar() {
   const splitClip = useEditorStore(s => s.splitClip)
   const undo = useEditorStore(s => s.undo)
   const redo = useEditorStore(s => s.redo)
+  const addTrack = useEditorStore(s => s.addTrack)
   const setTimelineScale = useEditorStore(s => s.setTimelineScale)
   const [snapEnabled, setSnapEnabled] = useState(false)
 
@@ -56,13 +62,13 @@ export function Toolbar() {
         icon={<ZoomIn />}
         label="Zoom in"
         size="sm"
-        onClick={() => setTimelineScale(timelineScale + TIMELINE_ZOOM.STEP_BUTTON)}
+        onClick={() => setTimelineScale(Math.min(TIMELINE_ZOOM.MAX, timelineScale + TIMELINE_ZOOM.STEP_BUTTON))}
       />
       <IconButton
         icon={<ZoomOut />}
         label="Zoom out"
         size="sm"
-        onClick={() => setTimelineScale(timelineScale - TIMELINE_ZOOM.STEP_BUTTON)}
+        onClick={() => setTimelineScale(Math.max(TIMELINE_ZOOM.MIN, timelineScale - TIMELINE_ZOOM.STEP_BUTTON))}
       />
       <IconButton
         icon={<Maximize2 />}
@@ -80,6 +86,23 @@ export function Toolbar() {
         size="sm"
         active={snapEnabled}
         onClick={() => setSnapEnabled(v => !v)}
+      />
+
+      <Divider />
+
+      <Dropdown
+        trigger={
+          <LabelButton
+            icon={<Plus />}
+            label="Add Track"
+            variant="ghost"
+            size="sm"
+          />
+        }
+        items={[
+          { label: "Video Track", icon: <Film />, onClick: () => addTrack("video") },
+          { label: "Audio Track", icon: <Music />, onClick: () => addTrack("audio") },
+        ]}
       />
     </div>
   )
