@@ -9,7 +9,6 @@ import {
   ZoomOut,
   Maximize2,
   Magnet,
-  Plus,
   Film,
   Music,
 } from "lucide-react"
@@ -19,13 +18,14 @@ import { TIMELINE_ZOOM } from "../../constants/timeline"
 import { IconButton } from "../ui/IconButton"
 import { Divider } from "../ui/Divider"
 import { LabelButton } from "../ui/LabelButton"
-import { Dropdown } from "../ui/Dropdown"
 
 export function Toolbar() {
   const selectedClipId = useEditorStore(s => s.selectedClipId)
   const playhead = useEditorStore(s => s.playhead)
   const timelineScale = useEditorStore(s => s.timelineScale)
   const splitClip = useEditorStore(s => s.splitClip)
+  const copyClip = useEditorStore(s => s.copyClip)
+  const pasteClip = useEditorStore(s => s.pasteClip)
   const undo = useEditorStore(s => s.undo)
   const redo = useEditorStore(s => s.redo)
   const addTrack = useEditorStore(s => s.addTrack)
@@ -46,8 +46,8 @@ export function Toolbar() {
         disabled={!selectedClipId}
         onClick={() => { if (selectedClipId) splitClip(selectedClipId, playhead) }}
       />
-      <IconButton icon={<Copy />} label="Copy" size="sm" />
-      <IconButton icon={<Clipboard />} label="Paste" size="sm" />
+      <IconButton icon={<Copy />} label="Copy" size="sm" onClick={copyClip} />
+      <IconButton icon={<Clipboard />} label="Paste" size="sm" onClick={pasteClip} />
 
       <Divider />
 
@@ -90,19 +90,19 @@ export function Toolbar() {
 
       <Divider />
 
-      <Dropdown
-        trigger={
-          <LabelButton
-            icon={<Plus />}
-            label="Add Track"
-            variant="ghost"
-            size="sm"
-          />
-        }
-        items={[
-          { label: "Video Track", icon: <Film />, onClick: () => addTrack("video") },
-          { label: "Audio Track", icon: <Music />, onClick: () => addTrack("audio") },
-        ]}
+      <LabelButton
+        icon={<Film />}
+        label="+ Video Track"
+        variant="ghost"
+        size="sm"
+        onClick={() => addTrack("video")}
+      />
+      <LabelButton
+        icon={<Music />}
+        label="+ Audio Track"
+        variant="ghost"
+        size="sm"
+        onClick={() => addTrack("audio")}
       />
     </div>
   )
