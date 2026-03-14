@@ -7,7 +7,7 @@ import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType, Tr
 import { DEFAULT_AUDIO_CONFIG } from "../constants/audioConfig"
 import { DEFAULT_SPEED, MAX_SPEED, MIN_SPEED } from "../constants/speed"
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../constants/colorAdjustments"
-import { resetPlayer } from "../hooks/usePlayer"
+import { resetPlayer, renderSingleFrame } from "../hooks/usePlayer"
 
 export interface ProxyState {
   status: 'pending' | 'ready' | 'error'
@@ -323,10 +323,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         })),
       },
     }))
+    renderSingleFrame()
+    resetPlayer()
   },
 
   commitTransform(_clipId: string): void {
     get().pushHistory('Transform clip')
+    renderSingleFrame()
+    resetPlayer()
   },
 
   updateClipColorAdjustments(clipId: string, adjustments: ColorAdjustments): void {
@@ -344,11 +348,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         })),
       },
     }))
+    resetPlayer()
   },
 
   updateClipAudioConfig(clipId: string, config: Partial<AudioConfig>): void {
     get().pushHistory("Audio config")
-    resetPlayer()
     set(state => ({
       project: {
         ...state.project,
@@ -363,6 +367,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         })),
       },
     }))
+    resetPlayer()
   },
 
   setClipSpeed(clipId: string, speed: number): void {
