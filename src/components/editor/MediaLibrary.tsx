@@ -5,6 +5,11 @@ import { MediaCard, LoadingCard } from "./MediaCard"
 import { generateId } from "../../utils/id"
 import { generateProxy } from "../../engine/proxyEngine"
 import { LabelButton } from "../ui/LabelButton"
+import type { Clip, Media, Track } from "../../project/projectTypes"
+import { DEFAULT_AUDIO_CONFIG } from "../../constants/audioConfig"
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
+import { DEFAULT_SPEED } from "../../constants/speed"
+import { toMs, toSeconds } from "../../utils/time"
 
 interface PendingMedia {
   tempId: string
@@ -16,6 +21,10 @@ export function MediaLibrary() {
   const setProxyState = useEditorStore(s => s.setProxyState)
   const proxyMap = useEditorStore(s => s.proxyMap)
   const media = useEditorStore(s => s.project.media)
+  const playhead = useEditorStore(s => s.playhead)
+  const tracks = useEditorStore(s => s.project.tracks)
+  const addClip = useEditorStore(s => s.addClip)
+  const addTrack = useEditorStore(s => s.addTrack)
   const inputRef = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<PendingMedia[]>([])
   // One object URL per mediaId, revoked on unmount
@@ -57,6 +66,66 @@ export function MediaLibrary() {
         }
       })
     )
+  }
+
+  function insertMediaAtPlayhead(item: Media) {
+    const trackType = item.type === "audio" ? "audio" : "video"
+    const roundedPlayhead = toSeconds(toMs(playhead))
+    const duration = item.duration ?? 5
+    const timelineStart = roundedPlayhead
+    const timelineEnd = toSeconds(toMs(roundedPlayhead + duration))
+
+    let targetTrack: Track | undefined = tracks.find(track =>
+      track.type === trackType
+      && !track.clips.some(clip => timelineStart < clip.timelineEnd && timelineEnd > clip.timelineStart),
+    )
+
+    if (!targetTrack) {
+      targetTrack = addTrack(trackType)
+    }
+
+    const newClip: Clip = item.type === "audio"
+      ? {
+        id: generateId(),
+        trackId: targetTrack.id,
+        type: "audio",
+        mediaId: item.id,
+        timelineStart,
+        timelineEnd,
+        mediaStart: 0,
+        mediaEnd: duration,
+        volume: 1,
+        speed: DEFAULT_SPEED,
+        audioConfig: { ...DEFAULT_AUDIO_CONFIG },
+      }
+      : item.type === "image"
+        ? {
+          id: generateId(),
+          trackId: targetTrack.id,
+          type: "image",
+          mediaId: item.id,
+          timelineStart,
+          timelineEnd,
+          transform: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 },
+          colorAdjustments: { ...DEFAULT_COLOR_ADJUSTMENTS },
+        }
+        : {
+          id: generateId(),
+          trackId: targetTrack.id,
+          type: "video",
+          mediaId: item.id,
+          timelineStart,
+          timelineEnd,
+          mediaStart: 0,
+          mediaEnd: duration,
+          volume: 1,
+          speed: DEFAULT_SPEED,
+          transform: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 },
+          colorAdjustments: { ...DEFAULT_COLOR_ADJUSTMENTS },
+          audioConfig: { ...DEFAULT_AUDIO_CONFIG },
+        }
+
+    addClip(newClip)
   }
 
   const hasItems = media.length > 0 || pending.length > 0
@@ -106,7 +175,9 @@ export function MediaLibrary() {
       {hasItems && (
         <div className="grid grid-cols-2 gap-2 p-2 overflow-y-auto flex-1">
           {media.map(item => (
-            <MediaCard key={item.id} media={item} objectUrl={getObjectUrl(item.id)} proxyStatus={proxyMap[item.id]?.status} />
+            <div key={item.id} onDoubleClick={() => insertMediaAtPlayhead(item)}>
+              <MediaCard media={item} objectUrl={getObjectUrl(item.id)} proxyStatus={proxyMap[item.id]?.status} />
+            </div>
           ))}
           {pending.map(p => (
             <LoadingCard key={p.tempId} fileName={p.fileName} />
