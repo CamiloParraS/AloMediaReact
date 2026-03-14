@@ -1,13 +1,21 @@
-import { useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useEditorStore } from "../store/editorStore"
 import { getProjectDuration } from "../utils/time"
 import { STORE_SYNC_INTERVAL_MS } from "../constants/timeline"
+import { releaseAllBuffers } from "../player/video/videoBuffer"
+import { disconnectAll } from "../player/audio/audioSync"
 
 // Shared refs — live playhead and playing flag readable from RAF without React re-renders
 const playheadRef = { current: 0 }
 const isPlayingRef = { current: false }
 
 export { playheadRef, isPlayingRef }
+
+let resetPlayerImpl: (() => void) | null = null
+
+export function resetPlayer(): void {
+  resetPlayerImpl?.()
+}
 
 export function usePlayer() {
   const setPlayhead = useEditorStore(s => s.setPlayhead)
@@ -16,12 +24,17 @@ export function usePlayer() {
   const rafRef = useRef<number | undefined>(undefined)
   const lastWallTimeRef = useRef(0)
   const lastStoreSyncRef = useRef(0)
+  const needsReinitRef = useRef(false)
   // onFrameCallback is set by PreviewPlayer so the RAF loop can call it every frame
   const onFrameRef = useRef<((playhead: number) => void) | null>(null)
 
   const play = useCallback(() => {
     if (isPlayingRef.current) return
     playheadRef.current = Math.max(0, useEditorStore.getState().playhead)
+    if (needsReinitRef.current) {
+      onFrameRef.current?.(playheadRef.current)
+      needsReinitRef.current = false
+    }
     lastWallTimeRef.current = performance.now()
     lastStoreSyncRef.current = performance.now()
     isPlayingRef.current = true
@@ -83,5 +96,23 @@ export function usePlayer() {
     seekFlagResetRef.current?.()
   }, [setPlayhead])
 
-  return { play, pause, seek, isPlaying, onFrameRef, playheadRef, seekFlagResetRef }
+  const resetPlayerState = useCallback(() => {
+    if (isPlayingRef.current) {
+      pause()
+    }
+    releaseAllBuffers()
+    disconnectAll()
+    needsReinitRef.current = true
+  }, [pause])
+
+  useEffect(() => {
+    resetPlayerImpl = resetPlayerState
+    return () => {
+      if (resetPlayerImpl === resetPlayerState) {
+        resetPlayerImpl = null
+      }
+    }
+  }, [resetPlayerState])
+
+  return { play, pause, seek, isPlaying, onFrameRef, playheadRef, seekFlagResetRef, resetPlayer: resetPlayerState }
 }
