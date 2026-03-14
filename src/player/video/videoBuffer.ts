@@ -13,6 +13,8 @@ export interface BufferState {
 
 type UrlResolver = (mediaId: string) => string | undefined
 
+const activeManagers = new Set<VideoBufferManager>()
+
 function seekEl(el: HTMLVideoElement, time: number): void {
   if (typeof el.fastSeek === "function") {
     el.fastSeek(time)
@@ -46,6 +48,7 @@ export class VideoBufferManager {
   constructor(elA: HTMLVideoElement, elB: HTMLVideoElement) {
     this.elA = elA
     this.elB = elB
+    activeManagers.add(this)
     // Always muted — audio is driven through the audio element pool
     this.elA.muted = true
     this.elB.muted = true
@@ -223,5 +226,30 @@ export class VideoBufferManager {
 
   pauseActive(): void {
     if (this.state.activeClipId) this.getActiveEl().pause()
+  }
+
+  releaseBuffers(): void {
+    this.elA.pause()
+    this.elB.pause()
+    this.elA.removeAttribute("src")
+    this.elB.removeAttribute("src")
+    this.elA.load()
+    this.elB.load()
+    this.elA.style.opacity = "0"
+    this.elB.style.opacity = "0"
+    this.state = {
+      activeClipId: null,
+      activeMediaId: null,
+      bufferedClipId: null,
+      bufferedMediaId: null,
+    }
+    this.clipSeekDone = null
+    this.swapPending = false
+  }
+}
+
+export function releaseAllBuffers(): void {
+  for (const manager of activeManagers) {
+    manager.releaseBuffers()
   }
 }
