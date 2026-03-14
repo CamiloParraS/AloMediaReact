@@ -1,4 +1,4 @@
-import { useState, useEffect, type DragEvent } from "react"
+import { useState, useEffect, useRef, type DragEvent } from "react"
 import type { Clip } from "../../project/projectTypes"
 import { timeToPx, pxToTime } from "../../utils/time"
 import { useEditorStore } from "../../store/editorStore"
@@ -16,9 +16,11 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart, 
   const playhead = useEditorStore(s => s.playhead)
   const splitClip = useEditorStore(s => s.splitClip)
   const removeClip = useEditorStore(s => s.removeClip)
+  const extractAudioFromClip = useEditorStore(s => s.extractAudioFromClip)
   const resizeClip = useEditorStore(s => s.resizeClip)
   const pushHistory = useEditorStore(s => s.pushHistory)
   const projectMedia = useEditorStore(s => s.project.media)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -29,12 +31,25 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart, 
     return media?.name ?? clip.type
   }
 
-  // Close the context menu when the user clicks anywhere outside it
+  // Close context menu on outside click and Escape while open.
   useEffect(() => {
     if (!contextMenu) return
-    function close() { setContextMenu(null) }
-    document.addEventListener("click", close)
-    return () => document.removeEventListener("click", close)
+    function handleMouseDown(event: MouseEvent) {
+      if (!contextMenuRef.current?.contains(event.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setContextMenu(null)
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
   }, [contextMenu])
 
   const left = timeToPx(clip.timelineStart, scale)
@@ -120,6 +135,7 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart, 
 
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           style={{
             position: "fixed",
             top: contextMenu.y,
@@ -138,6 +154,14 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart, 
           >
             Split at playhead
           </div>
+          {clip.type === "video" && (
+            <div
+              style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-accent-white)" }}
+              onClick={e => { e.stopPropagation(); extractAudioFromClip(clip.id); setContextMenu(null) }}
+            >
+              Extract Audio
+            </div>
+          )}
           <div
             style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-destructive-light)" }}
             onClick={e => { e.stopPropagation(); removeClip(clip.id); setContextMenu(null) }}
