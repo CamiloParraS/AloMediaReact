@@ -1,4 +1,5 @@
 import type { ColorAdjustments, Transform } from "../../project/projectTypes"
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
 import { buildCssFilter } from "../../utils/colorAdjustmentFilters"
 
 /** Returns a CSS-compatible style object for a clip transform (used in React JSX). */
@@ -24,5 +25,6 @@ export function applyTransformToEl(el: HTMLElement, t: Transform): void {
 
 /** Applies a clip's color adjustments as a CSS filter to an HTMLElement (used in RAF loop). */
 export function applyColorAdjustmentsToEl(el: HTMLElement, adj: ColorAdjustments | undefined): void {
-  el.style.filter = adj ? buildCssFilter(adj) : ""
+  const filter = buildCssFilter(adj ?? DEFAULT_COLOR_ADJUSTMENTS)
+  el.style.filter = filter && filter !== "none" ? filter : "none"
 }
