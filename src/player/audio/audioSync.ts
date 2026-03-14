@@ -304,3 +304,13 @@ export function destroyAudioContext(trackId: string): void {
   }
   audioContexts.delete(trackId)
 }
+
+export function disconnectAll(): void {
+  for (const trackId of [...audioContexts.keys()]) {
+    destroyAudioContext(trackId)
+  }
+  gainNodes.clear()
+  pannerNodes.clear()
+  mediaElementSources.clear()
+  audioContexts.clear()
+}
