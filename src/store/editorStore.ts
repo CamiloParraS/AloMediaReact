@@ -6,6 +6,8 @@ import { toMs, toSeconds } from "../utils/time"
 import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType, Transform, ColorAdjustments, AudioConfig } from "../project/projectTypes"
 import { DEFAULT_AUDIO_CONFIG } from "../constants/audioConfig"
 import { DEFAULT_SPEED, MAX_SPEED, MIN_SPEED } from "../constants/speed"
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../constants/colorAdjustments"
+import { resetPlayer } from "../hooks/usePlayer"
 
 export interface ProxyState {
   status: 'pending' | 'ready' | 'error'
@@ -31,6 +33,9 @@ type StoreActions = {
   updateClipColorAdjustments: (clipId: string, adjustments: ColorAdjustments) => void
   updateClipAudioConfig: (clipId: string, config: Partial<AudioConfig>) => void
   setClipSpeed: (clipId: string, speed: number) => void
+  extractAudioFromClip: (clipId: string) => void
+  copyClip: () => void
+  pasteClip: () => void
   setPlayhead: (time: number) => void
   setIsPlaying: (value: boolean) => void
   setTimelineScale: (scale: number) => void
@@ -43,7 +48,9 @@ type StoreActions = {
   setProxyState: (mediaId: string, state: ProxyState) => void
 }
 
-type EditorStore = EditorState & StoreActions
+type EditorStore = EditorState & {
+  clipboard: Clip | null
+} & StoreActions
 
 function makeInitialProject(): Project {
   return {
@@ -88,6 +95,14 @@ function detectMediaType(file: File): MediaType {
   return "image"
 }
 
+function findClipById(tracks: Track[], clipId: string): Clip | undefined {
+  for (const track of tracks) {
+    const clip = track.clips.find(c => c.id === clipId)
+    if (clip) return clip
+  }
+  return undefined
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   project: makeInitialProject(),
   playhead: 0,
@@ -95,6 +110,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   isPlaying: false,
   history: [],
   historyIndex: -1,
+  clipboard: null,
   proxyMap: {},
 
   setProxyState(mediaId: string, state: ProxyState): void {
@@ -139,6 +155,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   addClip(clip: Clip): void {
     get().pushHistory("Add clip")
+    resetPlayer()
     // Initialize audioConfig for video and audio clips if not already set
     const prepared: Clip = (() => {
       if (clip.type === "video" || clip.type === "audio") {
@@ -165,6 +182,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   removeClip(clipId: string): void {
     get().pushHistory("Remove clip")
+    resetPlayer()
     set(state => ({
       project: {
         ...state.project,
@@ -178,6 +196,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   moveClip(clipId: string, newStart: number, trackId: string): void {
     get().pushHistory("Move clip")
+    resetPlayer()
     set(state => {
       let targetClip: Clip | undefined
 
@@ -274,6 +293,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   resizeClip(clipId: string, newEnd: number): void {
+    resetPlayer()
     set(state => ({
       project: {
         ...state.project,
@@ -328,6 +348,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   updateClipAudioConfig(clipId: string, config: Partial<AudioConfig>): void {
     get().pushHistory("Audio config")
+    resetPlayer()
     set(state => ({
       project: {
         ...state.project,
@@ -393,6 +414,101 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }))
 
     get().pushHistory("Set clip speed")
+    resetPlayer()
+  },
+
+  extractAudioFromClip(clipId: string): void {
+    const state = get()
+    const sourceClip = findClipById(state.project.tracks, clipId)
+    if (!sourceClip || sourceClip.type !== "video") return
+
+    const fallbackTrack = state.project.tracks.find(t => t.type === "audio") ?? get().addTrack("audio")
+
+    const newClip: Clip = {
+      id: generateId(),
+      type: "audio",
+      mediaId: sourceClip.mediaId,
+      trackId: fallbackTrack.id,
+      timelineStart: sourceClip.timelineStart,
+      timelineEnd: sourceClip.timelineEnd,
+      mediaStart: sourceClip.mediaStart,
+      mediaEnd: sourceClip.mediaEnd,
+      volume: sourceClip.volume,
+      speed: sourceClip.speed ?? DEFAULT_SPEED,
+      audioConfig: { ...(sourceClip.audioConfig ?? DEFAULT_AUDIO_CONFIG) },
+    }
+
+    set(curr => ({
+      project: {
+        ...curr.project,
+        tracks: curr.project.tracks.map(track =>
+          track.id === fallbackTrack.id
+            ? { ...track, clips: [...track.clips, newClip] }
+            : track,
+        ),
+      },
+    }))
+    get().pushHistory("Extract audio")
+    resetPlayer()
+  },
+
+  copyClip(): void {
+    const state = get()
+    if (!state.selectedClipId) return
+    const selected = findClipById(state.project.tracks, state.selectedClipId)
+    if (!selected || selected.type === "text") return
+    set({ clipboard: deepClone(selected) })
+  },
+
+  pasteClip(): void {
+    const state = get()
+    const { clipboard } = state
+    if (!clipboard || clipboard.type === "text") return
+
+    const trackType: TrackType = clipboard.type === "audio" ? "audio" : "video"
+    const targetTrack = state.project.tracks.find(t => t.type === trackType) ?? get().addTrack(trackType)
+    const candidateStart = toSeconds(toMs(state.playhead))
+    const sourceDuration = "mediaStart" in clipboard && "mediaEnd" in clipboard
+      ? (clipboard.mediaEnd - clipboard.mediaStart) / (clipboard.speed ?? 1)
+      : (clipboard.timelineEnd - clipboard.timelineStart)
+    const candidateEnd = toSeconds(toMs(candidateStart + sourceDuration))
+
+    const overlappingClips = targetTrack.clips.filter(
+      clip => clip.timelineStart < candidateEnd && clip.timelineEnd > candidateStart,
+    )
+
+    const resolvedStart = overlappingClips.length > 0
+      ? toSeconds(toMs(Math.max(...overlappingClips.map(clip => clip.timelineEnd))))
+      : candidateStart
+    const resolvedEnd = toSeconds(toMs(resolvedStart + sourceDuration))
+
+    const newClip: Clip = {
+      ...deepClone(clipboard),
+      id: generateId(),
+      trackId: targetTrack.id,
+      timelineStart: resolvedStart,
+      timelineEnd: resolvedEnd,
+      ...(clipboard.type === "video" || clipboard.type === "audio"
+        ? { audioConfig: { ...(clipboard.audioConfig ?? DEFAULT_AUDIO_CONFIG) } }
+        : {}),
+      ...(clipboard.type === "video" || clipboard.type === "image"
+        ? { colorAdjustments: { ...(clipboard.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) } }
+        : {}),
+      ...("transform" in clipboard ? { transform: { ...clipboard.transform } } : {}),
+    }
+
+    set(curr => ({
+      project: {
+        ...curr.project,
+        tracks: curr.project.tracks.map(track =>
+          track.id === targetTrack.id
+            ? { ...track, clips: [...track.clips, newClip] }
+            : track,
+        ),
+      },
+    }))
+    get().pushHistory("Paste clip")
+    resetPlayer()
   },
 
   splitClip(clipId: string, time: number): void {
