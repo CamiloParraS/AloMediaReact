@@ -8,6 +8,8 @@ import { disconnectAll } from "../player/audio/audioSync"
 // Shared refs — live playhead and playing flag readable from RAF without React re-renders
 const playheadRef = { current: 0 }
 const isPlayingRef = { current: false }
+const playGenRef = { current: 0 }
+const onFrameRef = { current: null as ((playhead: number) => void) | null }
 
 export { playheadRef, isPlayingRef }
 
@@ -15,6 +17,12 @@ let resetPlayerImpl: (() => void) | null = null
 
 export function resetPlayer(): void {
   resetPlayerImpl?.()
+}
+
+export function renderSingleFrame(): void {
+  if (isPlayingRef.current) return
+  if (!onFrameRef.current) return
+  onFrameRef.current(playheadRef.current)
 }
 
 export function usePlayer() {
@@ -25,8 +33,6 @@ export function usePlayer() {
   const lastWallTimeRef = useRef(0)
   const lastStoreSyncRef = useRef(0)
   const needsReinitRef = useRef(false)
-  // onFrameCallback is set by PreviewPlayer so the RAF loop can call it every frame
-  const onFrameRef = useRef<((playhead: number) => void) | null>(null)
 
   const play = useCallback(() => {
     if (isPlayingRef.current) return
@@ -40,8 +46,11 @@ export function usePlayer() {
     isPlayingRef.current = true
     useEditorStore.getState().setIsPlaying(true)
 
+    playGenRef.current += 1
+    const myGen = playGenRef.current
+
     function frame(wallTime: number) {
-      if (!isPlayingRef.current) return
+      if (!isPlayingRef.current || playGenRef.current !== myGen) return
 
       const delta = (wallTime - lastWallTimeRef.current) / 1000
       lastWallTimeRef.current = wallTime
@@ -76,6 +85,7 @@ export function usePlayer() {
     if (!isPlayingRef.current && rafRef.current === undefined) {
       return
     }
+    playGenRef.current += 1
     if (rafRef.current !== undefined) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = undefined
@@ -97,12 +107,22 @@ export function usePlayer() {
   }, [setPlayhead])
 
   const resetPlayerState = useCallback(() => {
-    if (isPlayingRef.current) {
+    const wasPlaying = isPlayingRef.current
+    playGenRef.current += 1
+    if (wasPlaying) {
       pause()
     }
     releaseAllBuffers()
     disconnectAll()
     needsReinitRef.current = true
+    if (wasPlaying) {
+      playheadRef.current = 0
+      useEditorStore.getState().setPlayhead(0)
+      useEditorStore.getState().setIsPlaying(false)
+    } else {
+      useEditorStore.getState().setIsPlaying(false)
+      onFrameRef.current?.(playheadRef.current)
+    }
   }, [pause])
 
   useEffect(() => {

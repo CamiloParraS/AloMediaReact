@@ -183,6 +183,9 @@ function setupGainNode(
   // Create gain node if needed
   if (!gainNode) {
     gainNode = ctx.createGain()
+    // Disconnect source from any current connection (e.g. pass-through added
+    // by disconnectAll) before inserting the gain node into the chain.
+    try { source.disconnect() } catch (e) {}
     source.connect(gainNode)
     gainNodes.set(trackId, gainNode)
   }
@@ -251,6 +254,9 @@ function setupPannerOnly(
 
   if (!pannerNode) {
     pannerNode = ctx.createStereoPanner()
+    // Disconnect source from any current connection (e.g. pass-through added
+    // by disconnectAll) before inserting the panner into the chain.
+    try { source.disconnect() } catch (e) {}
     source.connect(pannerNode)
     pannerNode.connect(ctx.destination)
     pannerNodes.set(trackId, pannerNode)
@@ -307,10 +313,23 @@ export function destroyAudioContext(trackId: string): void {
 
 export function disconnectAll(): void {
   for (const trackId of [...audioContexts.keys()]) {
-    destroyAudioContext(trackId)
+    const gainNode = gainNodes.get(trackId)
+    const pannerNode = pannerNodes.get(trackId)
+    const source = mediaElementSources.get(trackId)
+    const ctx = audioContexts.get(trackId)
+    try {
+      if (pannerNode) pannerNode.disconnect()
+      if (gainNode) gainNode.disconnect()
+      // Re-attach source directly to destination so the audio element
+      // produces sound at native volume while the player reinitialises.
+      // audioContexts and mediaElementSources are intentionally kept alive —
+      // createMediaElementSource() can only be called once per HTMLAudioElement,
+      // so these must persist across resets and be reused on reconnection.
+      if (source && ctx && ctx.state !== "closed") {
+        source.connect(ctx.destination)
+      }
+    } catch (e) {}
   }
   gainNodes.clear()
   pannerNodes.clear()
-  mediaElementSources.clear()
-  audioContexts.clear()
 }
