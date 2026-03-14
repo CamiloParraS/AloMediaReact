@@ -21,6 +21,7 @@ export function Timeline() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (!e.ctrlKey) return
     e.preventDefault()
     const factor = e.deltaY > 0 ? 1 / ZOOM_STEP : ZOOM_STEP
     setTimelineScale(timelineScale * factor)
