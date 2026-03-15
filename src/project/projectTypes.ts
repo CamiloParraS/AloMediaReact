@@ -8,7 +8,7 @@ export interface Media {
   format: string
   duration: number | null
   size: number
-  hash: string // SHA-256 hex — used for deduplication
+  hash: string // SHA-256 hex, used for deduplication
 }
 
 export interface Transform {
@@ -131,9 +131,11 @@ export interface RenderSegment {
   timelineEnd: number
   speed: number
   type: "video" | "audio" | "image" | "text"
+  trackId: string
+  trackOrder: number
+  trackType: TrackType
   transform?: Transform
   volume?: number
-  trackOrder?: number
   colorAdjustments?: ColorAdjustments
   audioConfig?: AudioConfig
 }
@@ -143,4 +145,6 @@ export interface RenderJob {
   outputFormat: "mp4" | "webm"
   resolution: { width: number; height: number }
   fps: number
+  outputFileName: string
+  projectDuration: number
 }
