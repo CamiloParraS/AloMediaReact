@@ -44,6 +44,7 @@ type StoreActions = {
   pushHistory: (description: string) => void
   undo: () => void
   redo: () => void
+  removeMedia: (mediaId: string) => void
   proxyMap: Record<string, ProxyState>
   setProxyState: (mediaId: string, state: ProxyState) => void
 }
@@ -606,5 +607,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (historyIndex >= history.length - 1) return
     const newIndex = historyIndex + 1
     set({ project: deepClone(history[newIndex].project), historyIndex: newIndex })
+  },
+
+  removeMedia(mediaId: string): void {
+    get().pushHistory("Remove media")
+    resetPlayer()
+    fileMap.delete(mediaId)
+    set(state => {
+      const { [mediaId]: _removed, ...restProxy } = state.proxyMap
+      return {
+        proxyMap: restProxy,
+        project: {
+          ...state.project,
+          media: state.project.media.filter(m => m.id !== mediaId),
+          tracks: state.project.tracks.map(track => ({
+            ...track,
+            clips: track.clips.filter(c => !("mediaId" in c) || c.mediaId !== mediaId),
+          })),
+        },
+      }
+    })
   },
 }))
