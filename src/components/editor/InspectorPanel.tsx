@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Film, Gauge, RotateCcw, Volume2 } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import type { Clip } from "../../project/projectTypes"
 import { useEditorStore } from "../../store/editorStore"
 import { DEFAULT_SPEED, MAX_SPEED, MIN_SPEED } from "../../constants/speed"
@@ -71,38 +71,92 @@ export function InspectorPanel({ clip }: InspectorPanelProps) {
       return <AudioConfigPanel clipId={clip.id} />
     }
 
+    // Speed tab
     return (
       <div className="w-full">
-        <div className="flex items-center justify-between mb-0.5">
-          <div>
-            <span className="text-xs text-muted">Speed</span>
-            <span className="text-[11px] text-muted-light leading-tight block mb-2 opacity-55">
-              Speeds up or slows down the clip, changing its duration on the timeline
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-            <span className="font-mono text-xs text-muted-light tabular-nums w-14 text-right">
+        {/* Section header */}
+        <div
+          style={{
+            height: 24,
+            background: "var(--color-dark)",
+            padding: "0 8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderBottom: "1px solid var(--color-dark-border)",
+            marginBottom: 8,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "var(--color-muted)",
+            }}
+          >
+            Speed
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                fontFamily: "'Courier New', monospace",
+                fontSize: 10,
+                color: "var(--color-accent-white)",
+                minWidth: 36,
+                textAlign: "right",
+              }}
+            >
               {speed.toFixed(2)}×
             </span>
             <button
               onClick={() => setClipSpeed(clip.id, DEFAULT_SPEED)}
               disabled={Math.abs(speed - DEFAULT_SPEED) <= 0.001}
               title="Reset to default"
-              className="text-muted hover:text-muted-light disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 0,
+                border: "none",
+                background: "transparent",
+                color: "var(--color-muted)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+                opacity: Math.abs(speed - DEFAULT_SPEED) <= 0.001 ? 0.3 : 1,
+              }}
               aria-label="Reset speed to default"
             >
-              <RotateCcw size={11} />
+              <RotateCcw size={10} />
             </button>
           </div>
         </div>
-        <RangeSlider
-          value={speedPosition}
-          min={0}
-          max={1}
-          step={0.001}
-          label="Speed"
-          onChange={handleSpeedPositionChange}
-        />
+
+        {/* Min/max labels */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            padding: "0 8px 4px",
+          }}
+        >
+          <span style={{ fontSize: 9, color: "var(--color-muted)" }}>0.1×</span>
+          <span style={{ fontSize: 9, color: "var(--color-muted)" }}>5.0×</span>
+        </div>
+
+        <div style={{ padding: "0 8px 8px" }}>
+          <RangeSlider
+            value={speedPosition}
+            min={0}
+            max={1}
+            step={0.001}
+            label="Speed"
+            onChange={handleSpeedPositionChange}
+          />
+        </div>
       </div>
     )
   }
@@ -110,30 +164,79 @@ export function InspectorPanel({ clip }: InspectorPanelProps) {
   const showTabs = tabs.length > 1
 
   return (
-    <aside className="w-80 shrink-0 flex flex-col bg-dark-surface border-l border-dark-border overflow-hidden">
+    <aside
+      className="shrink-0 flex flex-col overflow-hidden"
+      style={{
+        width: 280,
+        background: "var(--color-dark-surface)",
+        borderLeft: "1px solid var(--color-dark-border)",
+      }}
+    >
+      {/* Panel header */}
+      <div
+        className="flex items-center shrink-0"
+        style={{
+          height: 28,
+          background: "var(--color-dark)",
+          borderBottom: showTabs ? "none" : "1px solid var(--color-dark-border)",
+          padding: "0 8px",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--color-muted)",
+          }}
+        >
+          Inspector
+        </span>
+      </div>
+
+      {/* Tab bar */}
       {showTabs && (
-        <div className="flex border-b border-dark-border bg-dark-card">
+        <div
+          className="flex shrink-0"
+          style={{
+            height: 32,
+            background: "var(--color-dark)",
+            borderBottom: "1px solid var(--color-dark-border)",
+          }}
+        >
           {tabs.map(tab => {
             const active = activeTab === tab
             const label = tab === "video" ? "Video" : tab === "audio" ? "Audio" : "Speed"
-            const Icon = tab === "video" ? Film : tab === "audio" ? Volume2 : Gauge
 
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${active ? "text-accent-white border-b-2 border-accent-red" : "text-muted hover:text-accent-white"}`}
                 type="button"
+                style={{
+                  height: "100%",
+                  padding: "0 14px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 0,
+                  border: "none",
+                  background: "transparent",
+                  color: active ? "var(--color-accent-white)" : "var(--color-muted)",
+                  borderBottom: active ? "2px solid var(--color-accent-red)" : "2px solid transparent",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  letterSpacing: "0.02em",
+                }}
               >
-                <Icon size={14} />
-                <span>{label}</span>
+                {label}
               </button>
             )
           })}
         </div>
       )}
 
-      <div className="overflow-y-auto flex-1 px-4 py-3">
+      <div className="overflow-y-auto flex-1" style={{ padding: showTabs ? "8px 0" : "8px 0" }}>
         {renderContent()}
       </div>
     </aside>
