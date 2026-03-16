@@ -37,3 +37,15 @@ export const DRIFT_CORRECTION_THRESHOLD_S = 0.25
 
 /** How often (ms) the RAF loop syncs the live playhead ref into the Zustand store for UI updates. */
 export const STORE_SYNC_INTERVAL_MS = 100
+
+/** Time-domain snap threshold when dragging clips (seconds). Used when scale is unavailable. */
+export const SNAP_THRESHOLD_S = 0.3
+
+/** Delay (ms) before hold-to-zoom repeat kicks in. */
+export const ZOOM_HOLD_DELAY_MS = 400
+
+/** Interval (ms) between repeated zoom steps during hold-to-zoom. */
+export const ZOOM_HOLD_INTERVAL_MS = 80
+
+/** Duration of one video frame at 30 fps, used for frame-step seek shortcuts. */
+export const FRAME_STEP_SECONDS = 1 / 30
