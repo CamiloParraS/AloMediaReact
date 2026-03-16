@@ -1,4 +1,6 @@
+import { useState } from "react"
 import type { Media } from "../../project/projectTypes"
+import { MediaContextMenu } from "./MediaContextMenu"
 
 function formatDuration(media: Media): string {
   if (media.type === "image") return "img"
@@ -35,42 +37,69 @@ function MediaThumbnail({ media, objectUrl }: { media: Media; objectUrl: string 
   )
 }
 
-export function MediaCard({ media, objectUrl, proxyStatus }: { media: Media; objectUrl: string | undefined; proxyStatus?: 'pending' | 'ready' | 'error' }) {
-  return (
-    <div
-      draggable
-      onDragStart={e => {
-        const durationSeconds = media.duration ?? 5
-        e.dataTransfer.setData("mediaId", media.id)
-        e.dataTransfer.setData("clipDuration", String(durationSeconds))
-        window.dispatchEvent(new CustomEvent("alomedia:drag-start", {
-          detail: {
-            kind: "media",
-            mediaId: media.id,
-            durationSeconds,
-          },
-        }))
-      }}
-      onDragEnd={() => {
-        window.dispatchEvent(new CustomEvent("alomedia:drag-end"))
-      }}
-      className="relative aspect-square rounded-lg border border-dark-border bg-dark-card hover:border-accent-red/70 hover:bg-dark-elevated cursor-pointer editor-transition overflow-hidden group"
-    >
-      {/* Thumbnail — top ~75% */}
-      <div className="absolute inset-0 bottom-[26%] bg-dark overflow-hidden">
-        <MediaThumbnail media={media} objectUrl={objectUrl} />
-      </div>
+interface MediaCardProps {
+  media: Media
+  objectUrl: string | undefined
+  proxyStatus?: 'pending' | 'ready' | 'error'
+  onInsertAtPlayhead: () => void
+}
 
-      {/* Info strip — bottom ~26% */}
-      <div className="absolute bottom-0 left-0 right-0 h-[26%] bg-dark-surface/90 px-1.5 flex flex-col justify-center gap-0.5">
-        <p className="text-[10px] font-medium text-accent-white truncate leading-none">{media.name}</p>
-        <div className="flex items-center gap-1">
-          <span className="text-[9px] text-muted leading-none">{formatDuration(media)}</span>
-          {proxyStatus === 'pending' && <span className="text-[9px] text-muted opacity-60 leading-none">proxy…</span>}
-          {proxyStatus === 'error' && <span className="text-[9px] text-red-400 leading-none">!</span>}
+export function MediaCard({ media, objectUrl, proxyStatus, onInsertAtPlayhead }: MediaCardProps) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault()
+    setMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  return (
+    <>
+      <div
+        draggable
+        onContextMenu={handleContextMenu}
+        onDragStart={e => {
+          const durationSeconds = media.duration ?? 5
+          e.dataTransfer.setData("mediaId", media.id)
+          e.dataTransfer.setData("clipDuration", String(durationSeconds))
+          window.dispatchEvent(new CustomEvent("alomedia:drag-start", {
+            detail: {
+              kind: "media",
+              mediaId: media.id,
+              durationSeconds,
+            },
+          }))
+        }}
+        onDragEnd={() => {
+          window.dispatchEvent(new CustomEvent("alomedia:drag-end"))
+        }}
+        className="relative aspect-square rounded-lg border border-dark-border bg-dark-card hover:border-accent-red/70 hover:bg-dark-elevated cursor-pointer editor-transition overflow-hidden group"
+      >
+        {/* Thumbnail — top ~75% */}
+        <div className="absolute inset-0 bottom-[26%] bg-dark overflow-hidden">
+          <MediaThumbnail media={media} objectUrl={objectUrl} />
+        </div>
+
+        {/* Info strip — bottom ~26% */}
+        <div className="absolute bottom-0 left-0 right-0 h-[26%] bg-dark-surface/90 px-1.5 flex flex-col justify-center gap-0.5">
+          <p className="text-[10px] font-medium text-accent-white truncate leading-none">{media.name}</p>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-muted leading-none">{formatDuration(media)}</span>
+            {proxyStatus === 'pending' && <span className="text-[9px] text-muted opacity-60 leading-none">proxy…</span>}
+            {proxyStatus === 'error' && <span className="text-[9px] text-red-400 leading-none">!</span>}
+          </div>
         </div>
       </div>
-    </div>
+
+      {menu && (
+        <MediaContextMenu
+          mediaId={media.id}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onInsertAtPlayhead={onInsertAtPlayhead}
+        />
+      )}
+    </>
   )
 }
 
