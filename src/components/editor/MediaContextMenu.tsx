@@ -77,7 +77,8 @@ export function MediaContextMenu({ mediaId, x, y, onClose, onInsertAtPlayhead }:
       ref={menuRef}
       role="menu"
       style={{ left: clampedX, top: clampedY, width: menuWidth }}
-      className="fixed z-[9999] rounded-lg border border-dark-border bg-dark-elevated shadow-xl py-1 context-menu-enter"
+      className="fixed z-[9999] border border-dark-border bg-dark-elevated py-1 context-menu-enter"
+      style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}
     >
       {!confirmDelete ? (
         <>
@@ -86,7 +87,7 @@ export function MediaContextMenu({ mediaId, x, y, onClose, onInsertAtPlayhead }:
             onClick={handleInsert}
             disabled={isProxyPending}
             title={isProxyPending ? "Proxy not ready yet" : undefined}
-            className="w-full text-left px-3 py-1.5 text-sm text-accent-white hover:bg-dark-border disabled:opacity-40 disabled:cursor-not-allowed editor-transition"
+            className="w-full text-left px-3 py-1.5 text-[11px] text-accent-white hover:bg-dark-border disabled:opacity-40 disabled:cursor-not-allowed editor-transition"
           >
             Add to Timeline
           </button>
@@ -94,7 +95,7 @@ export function MediaContextMenu({ mediaId, x, y, onClose, onInsertAtPlayhead }:
           <button
             role="menuitem"
             onClick={handleDeleteClick}
-            className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-950/40 editor-transition"
+            className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-red-950/40 editor-transition"
           >
             Delete Media
           </button>
@@ -107,13 +108,13 @@ export function MediaContextMenu({ mediaId, x, y, onClose, onInsertAtPlayhead }:
           <div className="flex gap-2">
             <button
               onClick={handleConfirmDelete}
-              className="flex-1 text-xs text-red-400 border border-red-800 rounded px-2 py-1 hover:bg-red-950/40 editor-transition"
+              className="flex-1 text-[10px] text-red-400 border border-red-800 px-2 py-1 hover:bg-red-950/40 editor-transition"
             >
               Remove
             </button>
             <button
               onClick={() => setConfirmDelete(false)}
-              className="flex-1 text-xs text-muted-light border border-dark-border rounded px-2 py-1 hover:bg-dark-border editor-transition"
+              className="flex-1 text-[10px] text-muted-light border border-dark-border px-2 py-1 hover:bg-dark-border editor-transition"
             >
               Cancel
             </button>

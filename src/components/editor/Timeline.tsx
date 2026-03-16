@@ -31,7 +31,6 @@ export function Timeline() {
 
   const duration = getProjectDuration(project.tracks)
   const majorInterval = selectGridInterval(timelineScale)
-  // Keep at least two minutes visible so default minute labels are usable on first open.
   const rulerDuration = Math.max(duration + 10, 120)
 
   function handleMediaDrop(trackId: string, mediaId: string, e: DragEvent<HTMLDivElement>) {
@@ -119,43 +118,48 @@ export function Timeline() {
   const majorTickTimes = Array.from({ length: majorTickCount }, (_, i) => i * majorInterval)
 
   return (
-    <div className="flex flex-1 flex-col bg-dark overflow-hidden">
+    <div
+      className="flex flex-1 flex-col overflow-hidden"
+      style={{ background: "var(--color-dark-surface)" }}
+    >
       {/* Scrollable timeline area */}
       <div
         ref={containerRef}
         className="flex-1 overflow-x-auto overflow-y-auto relative"
         onWheel={handleWheel}
       >
-        {/* Ruler stays in normal flow at top of timeline content. */}
         <div style={{ minWidth: totalWidth, display: "flex", flexDirection: "column" }}>
           <PlayheadBar totalWidth={totalWidth} duration={rulerDuration} majorInterval={majorInterval} />
 
-          {/* Tracks area becomes the absolute-positioning context for playhead/grid lines. */}
+          {/* Tracks area */}
           <div style={{ position: "relative" }}>
-            {/* Major gridlines across tracks (from top of Track 1 downward). */}
-            <div className="absolute left-0 right-0 pointer-events-none z-1" style={{ top: 0, bottom: 0 }}>
+            {/* Major gridlines */}
+            <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 0, bottom: 0, zIndex: 1 }}>
               {majorTickTimes.map(t => (
                 <div
                   key={t}
-                  className="absolute border-l border-dark-border opacity-30"
                   style={{
+                    position: "absolute",
                     left: TRACK_HEADER_WIDTH + timeToPx(t, timelineScale),
                     top: 0,
                     bottom: 0,
+                    width: 1,
+                    background: "var(--color-dark-border)",
+                    opacity: 0.3,
                   }}
                 />
               ))}
             </div>
 
-            {/* Playhead needle starts at Track 1 top and extends through track rows only. */}
+            {/* Playhead needle — 1px, full height */}
             <div
               style={{
                 position: "absolute",
                 top: 0,
                 left: TRACK_HEADER_WIDTH + timeToPx(playhead, timelineScale),
-                width: 2,
+                width: 1,
                 height: "100%",
-                backgroundColor: "var(--color-accent-red)",
+                background: "var(--color-accent-red)",
                 pointerEvents: "none",
                 zIndex: 3,
               }}
