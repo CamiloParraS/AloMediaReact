@@ -9,6 +9,7 @@ import { ExportModal } from "../../components/editor/ExportModal"
 import { useEditorStore } from "../../store/editorStore"
 import { exportProjectJSON, loadProject } from "../../project/projectSerializer"
 import { useExport } from "../../hooks/useExport"
+import { useEditorKeyboardShortcuts } from "../../hooks/useEditorKeyboardShortcuts"
 import { IconButton } from "../../components/ui/IconButton"
 import { LabelButton } from "../../components/ui/LabelButton"
 
@@ -20,6 +21,7 @@ export default function VideoEditor() {
   const loadInputRef = useRef<HTMLInputElement>(null)
 
   const { startExport, cancelExport, progress, isExporting } = useExport()
+  useEditorKeyboardShortcuts()
 
   const selectedClip = useEditorStore(s => {
     if (!s.selectedClipId) return null
