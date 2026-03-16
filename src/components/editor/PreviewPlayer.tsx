@@ -10,18 +10,65 @@ import { buildCssFilter } from "../../utils/colorAdjustmentFilters"
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
 import { setupCanvasScaling } from "../../player/render/canvasScaling"
 import { TransformOverlay } from "./TransformOverlay"
-import { IconButton } from "../ui/IconButton"
 import { RangeSlider } from "../ui/RangeSlider"
 import { getActiveVideoClip } from "../../player/timeline/activeClipResolver"
 import { DEFAULT_SPEED } from "../../constants/speed"
 
-function formatTime(seconds: number): string {
+function formatTimecode(seconds: number): string {
   seconds = Math.max(0, isFinite(seconds) ? seconds : 0)
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = Math.floor(seconds % 60)
-  if (h > 0) return [h, m, s].map(v => String(v).padStart(2, "0")).join(":")
-  return [m, s].map(v => String(v).padStart(2, "0")).join(":")
+  const f = Math.floor((seconds % 1) * 30) // 30fps approximation
+  return [
+    String(h).padStart(2, "0"),
+    String(m).padStart(2, "0"),
+    String(s).padStart(2, "0"),
+    String(f).padStart(2, "0"),
+  ].join(":")
+}
+
+function TransportBtn({
+  icon,
+  label,
+  onClick,
+  primary = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  primary?: boolean
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: primary ? 32 : 28,
+        height: primary ? 32 : 28,
+        flexShrink: 0,
+        borderRadius: 0,
+        border: "none",
+        background: primary || hovered ? "var(--color-dark-elevated)" : "transparent",
+        color: "var(--color-muted-light)",
+        cursor: "pointer",
+        transition: "background-color 150ms",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", width: primary ? 16 : 14, height: primary ? 16 : 14 }}>
+        {icon}
+      </span>
+    </button>
+  )
 }
 
 export function PreviewPlayer() {
@@ -40,11 +87,9 @@ export function PreviewPlayer() {
   const [isMuted, setIsMuted] = useState(false)
   const [volume, setVolume] = useState(1)
 
-  // Secondary video element refs and clip data for multi-track sync
   const secondaryVideoElemsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
   const secondaryClipsRef = useRef<VideoClip[]>([])
 
-  // Canvas scaling via ResizeObserver
   useEffect(() => {
     const container = canvasContainerRef.current
     const inner = innerCanvasRef.current
@@ -52,7 +97,6 @@ export function PreviewPlayer() {
     return setupCanvasScaling(container, inner)
   }, [])
 
-  // Media synchronization (video double-buffer + audio)
   const { videoRefA, videoRefB, getObjectUrl, getPlaybackUrl } = useMediaSync({
     onFrameRef,
     seekFlagResetRef,
@@ -63,7 +107,6 @@ export function PreviewPlayer() {
     secondaryClipsRef,
   })
 
-  // Derived values for rendering
   const sortedTracks = useMemo(
     () => [...project.tracks].sort((a, b) => b.order - a.order),
     [project.tracks],
@@ -87,7 +130,6 @@ export function PreviewPlayer() {
     [activeClips],
   )
 
-  // Track order lookup and z-index helper (lower order = foreground = higher z-index)
   const trackOrderMap = useMemo(
     () => new Map(project.tracks.map(t => [t.id, t.order])),
     [project.tracks],
@@ -98,7 +140,6 @@ export function PreviewPlayer() {
   )
   const zIndex = (trackId: string) => maxOrder - (trackOrderMap.get(trackId) ?? 0) + 1
 
-  // Primary video clip (handled by double-buffer) and secondary video clips (extra elements)
   const primaryVideoClip = useMemo(
     () => getActiveVideoClip(project.tracks, playhead),
     [project.tracks, playhead],
@@ -111,7 +152,6 @@ export function PreviewPlayer() {
     )
   }, [activeClips, primaryVideoClip])
 
-  // Keep secondary clip ref in sync for the RAF loop
   secondaryClipsRef.current = secondaryVideoClips
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -135,8 +175,17 @@ export function PreviewPlayer() {
         <div
           ref={canvasContainerRef}
           onClick={handleCanvasClick}
-          className="relative bg-black overflow-hidden cursor-default"
-          style={{ aspectRatio: "16 / 9", height: "100%", maxWidth: "100%", width: "auto" }}
+          style={{
+            position: "relative",
+            background: "#000000",
+            overflow: "hidden",
+            cursor: "default",
+            aspectRatio: "16 / 9",
+            height: "100%",
+            maxWidth: "100%",
+            width: "auto",
+            border: "1px solid var(--color-dark-border)",
+          }}
         >
           <div
             ref={innerCanvasRef}
@@ -148,7 +197,6 @@ export function PreviewPlayer() {
               pointerEvents: selectedClipId ? "none" : undefined,
             }}
           >
-            {/* Double-buffer video elements (primary clip) */}
             <video
               ref={videoRefA}
               style={{ position: "absolute", opacity: 1, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0, filter: primaryVideoClip ? buildCssFilter(primaryVideoClip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) : undefined }}
@@ -160,7 +208,6 @@ export function PreviewPlayer() {
               preload="auto" playsInline disablePictureInPicture
             />
 
-            {/* Secondary video clips from other tracks */}
             {secondaryVideoClips.map(clip => (
               <video
                 key={clip.id}
@@ -208,7 +255,7 @@ export function PreviewPlayer() {
                 clip={selectedClip}
                 previewWidth={canvasContainerRef.current?.clientWidth ?? 640}
                 previewHeight={canvasContainerRef.current?.clientHeight ?? 360}
-                onUpdate={t => updateClipTransform(selectedClipId, t )}
+                onUpdate={t => updateClipTransform(selectedClipId, t)}
                 onCommit={() => commitTransform(selectedClipId)}
               />
             )
@@ -216,20 +263,74 @@ export function PreviewPlayer() {
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="w-full bg-dark-card border-t border-dark-border px-3 py-2 shrink-0">
-        <RangeSlider min={0} max={duration || 1} step={0.01} value={playhead} label="Seek" onPointerDown={() => pause()} onChange={seek} className="mb-2" />
-        <div className="flex items-center gap-0.5 mt-1">
-          <IconButton icon={<SkipBack />} label="Skip to start" size="sm" onClick={() => seek(0)} />
-          <IconButton icon={<Rewind />} label="Rewind 10s" size="sm" onClick={() => seek(Math.max(0, playhead - 10))} />
-          <IconButton icon={isPlaying ? <Pause /> : <Play />} label={isPlaying ? "Pause" : "Play"} size="lg" variant="solid" onClick={() => (isPlaying ? pause() : play())} />
-          <IconButton icon={<FastForward />} label="Fast forward 10s" size="sm" onClick={() => seek(Math.min(duration, playhead + 10))} />
-          <IconButton icon={<SkipForward />} label="Skip to end" size="sm" onClick={() => seek(duration)} />
-          <span className="flex-1 text-center font-mono text-xs text-muted tabular-nums" aria-live="polite" aria-atomic="true">
-            {formatTime(playhead)} / {formatTime(duration)}
-          </span>
-          <IconButton icon={isMuted ? <VolumeX /> : <Volume2 />} label={isMuted ? "Unmute" : "Mute"} size="sm" onClick={() => setIsMuted(v => !v)} />
-          <RangeSlider min={0} max={100} step={1} value={isMuted ? 0 : Math.round(volume * 100)} label="Volume" onChange={v => { setVolume(v / 100); setIsMuted(false) }} className="w-20" />
+      {/* Transport bar */}
+      <div
+        className="w-full shrink-0 flex items-center"
+        style={{
+          height: 36,
+          background: "var(--color-dark)",
+          borderTop: "1px solid var(--color-dark-border)",
+          padding: "0 4px",
+          gap: 0,
+        }}
+      >
+        {/* Transport buttons */}
+        <TransportBtn icon={<SkipBack size={14} />} label="Skip to start" onClick={() => seek(0)} />
+        <TransportBtn icon={<Rewind size={14} />} label="Rewind 5s" onClick={() => seek(Math.max(0, playhead - 5))} />
+        <TransportBtn
+          icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          label={isPlaying ? "Pause" : "Play"}
+          onClick={() => (isPlaying ? pause() : play())}
+          primary
+        />
+        <TransportBtn icon={<FastForward size={14} />} label="Forward 5s" onClick={() => seek(Math.min(duration, playhead + 5))} />
+        <TransportBtn icon={<SkipForward size={14} />} label="Skip to end" onClick={() => seek(duration)} />
+
+        {/* Timecode */}
+        <div
+          style={{
+            fontFamily: "'Courier New', monospace",
+            fontSize: 12,
+            color: "var(--color-accent-white)",
+            padding: "0 10px",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            minWidth: 88,
+          }}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {formatTimecode(playhead)}
+        </div>
+
+        {/* Scrubber */}
+        <div className="flex-1 flex items-center" style={{ padding: "0 8px" }}>
+          <RangeSlider
+            min={0}
+            max={duration || 1}
+            step={0.01}
+            value={playhead}
+            label="Seek"
+            onPointerDown={() => pause()}
+            onChange={seek}
+          />
+        </div>
+
+        {/* Volume */}
+        <TransportBtn
+          icon={isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          label={isMuted ? "Unmute" : "Mute"}
+          onClick={() => setIsMuted(v => !v)}
+        />
+        <div style={{ width: 72, padding: "0 4px" }}>
+          <RangeSlider
+            min={0}
+            max={100}
+            step={1}
+            value={isMuted ? 0 : Math.round(volume * 100)}
+            label="Volume"
+            onChange={v => { setVolume(v / 100); setIsMuted(false) }}
+          />
         </div>
       </div>
     </div>

@@ -1,10 +1,9 @@
 import { useRef, useState, useEffect, useCallback } from "react"
-import { FilePlus2 } from "lucide-react"
+import { FilePlus2, Plus, Search } from "lucide-react"
 import { useEditorStore, fileMap } from "../../store/editorStore"
 import { MediaCard, LoadingCard } from "./MediaCard"
 import { generateId } from "../../utils/id"
 import { generateProxy } from "../../engine/proxyEngine"
-import { LabelButton } from "../ui/LabelButton"
 import type { Clip, Media, Track } from "../../project/projectTypes"
 import { DEFAULT_AUDIO_CONFIG } from "../../constants/audioConfig"
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
@@ -32,6 +31,7 @@ export function MediaLibrary() {
   const [pending, setPending] = useState<PendingMedia[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [dropError, setDropError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const dropZoneRef = useRef<HTMLDivElement>(null)
   // One object URL per mediaId, revoked on unmount
   const objectUrlsRef = useRef<Map<string, string>>(new Map())
@@ -82,7 +82,6 @@ export function MediaLibrary() {
   }
 
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Only respond to OS file drags, not internal clip/media token drags
     if (!e.dataTransfer.types.includes('Files')) return
     e.preventDefault()
     e.stopPropagation()
@@ -101,7 +100,6 @@ export function MediaLibrary() {
     if (!e.dataTransfer.types.includes('Files')) return
     e.preventDefault()
     e.stopPropagation()
-    // Only clear if pointer truly left the drop zone element (not a child)
     if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node | null)) {
       setIsDragOver(false)
     }
@@ -199,40 +197,120 @@ export function MediaLibrary() {
 
   const hasItems = media.length > 0 || pending.length > 0
 
+  const filteredMedia = searchQuery.trim()
+    ? media.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : media
+
   return (
     <div
       ref={dropZoneRef}
-      className="flex flex-col h-full bg-dark-surface overflow-hidden relative"
+      className="flex flex-col h-full overflow-hidden relative"
+      style={{ background: "var(--color-dark-surface)" }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Drop overlay — only visible during OS file drag */}
+      {/* Drop overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-dark-elevated/80 border-2 border-accent-red rounded pointer-events-none">
-          <FilePlus2 size={28} className="text-accent-red" />
-          <span className="text-sm font-semibold text-accent-white">Drop files here</span>
+        <div
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 pointer-events-none"
+          style={{
+            background: "rgba(34,34,48,0.85)",
+            border: "2px solid var(--color-accent-red)",
+          }}
+        >
+          <FilePlus2 size={28} style={{ color: "var(--color-accent-red)" }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-accent-white)" }}>Drop files here</span>
         </div>
       )}
 
-      {/* Inline drop error */}
+      {/* Drop error */}
       {dropError && (
-        <div className="absolute bottom-2 left-2 right-2 z-20 bg-dark-elevated border border-red-700 rounded px-2 py-1 text-[11px] text-red-400 pointer-events-none">
+        <div
+          className="absolute bottom-2 left-2 right-2 z-20 pointer-events-none"
+          style={{
+            background: "var(--color-dark-elevated)",
+            border: "1px solid #7f1d1d",
+            padding: "4px 8px",
+            fontSize: 10,
+            color: "#f87171",
+          }}
+        >
           {dropError}
         </div>
       )}
 
-      {/* Header */}
+      {/* Panel header */}
+      <div
+        className="flex items-center shrink-0"
+        style={{
+          height: 28,
+          background: "var(--color-dark)",
+          borderBottom: "1px solid var(--color-dark-border)",
+          padding: "0 8px",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--color-muted)",
+            flex: 1,
+          }}
+        >
+          Media
+        </span>
+        <button
+          onClick={() => inputRef.current?.click()}
+          title="Add media"
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            background: "var(--color-dark-elevated)",
+            border: "1px solid var(--color-dark-border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "var(--color-muted-light)",
+            flexShrink: 0,
+          }}
+        >
+          <Plus size={11} />
+        </button>
+      </div>
+
+      {/* Search bar */}
       {hasItems && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-dark-border shrink-0">
-          <span className="text-xs font-semibold text-muted-light uppercase tracking-wider">Media</span>
-          <LabelButton
-            icon={<FilePlus2 />}
-            label="Add Media"
-            variant="ghost"
-            size="sm"
-            onClick={() => inputRef.current?.click()}
+        <div
+          className="flex items-center shrink-0"
+          style={{
+            height: 28,
+            background: "var(--color-input-bg)",
+            borderBottom: "1px solid var(--color-dark-border)",
+            padding: "0 8px",
+            gap: 6,
+          }}
+        >
+          <Search size={11} style={{ color: "var(--color-muted)", flexShrink: 0 }} />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              fontSize: 11,
+              color: "var(--color-accent-white)",
+              fontFamily: "inherit",
+            }}
           />
         </div>
       )}
@@ -246,27 +324,52 @@ export function MediaLibrary() {
         onChange={e => { handleFiles(e.target.files); e.target.value = "" }}
       />
 
-      {/* full-panel clickable drop zone */}
+      {/* Empty state */}
       {!hasItems && (
         <div
-          className="flex flex-col items-center justify-center flex-1 m-3 gap-4 rounded-xl border-2 border-dashed border-dark-border hover:border-accent-red/60 hover:bg-dark-elevated/20 editor-transition min-h-48"
+          className="flex flex-col items-center justify-center flex-1 gap-3"
+          style={{ padding: 16 }}
         >
-          <LabelButton
-            icon={<FilePlus2 />}
-            label="Add Media"
-            variant="primary"
-            size="lg"
+          <div
+            style={{
+              border: "2px dashed var(--color-dark-border)",
+              width: "100%",
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              cursor: "pointer",
+            }}
             onClick={() => inputRef.current?.click()}
-          />
-          <span className="text-xs text-muted opacity-60 select-none">video, audio or images</span>
+          >
+            <FilePlus2 size={24} style={{ color: "var(--color-muted)" }} />
+            <span style={{ fontSize: 10, color: "var(--color-muted)", textAlign: "center" }}>
+              Click or drop<br />video, audio or images
+            </span>
+          </div>
         </div>
       )}
 
-      {/* 2-column square grid */}
+      {/* Media grid — 2 cols, 1px gap acts as border */}
       {hasItems && (
-        <div className="grid grid-cols-2 gap-2 p-2 overflow-y-auto flex-1 min-h-48">
-          {media.map(item => (
-            <div key={item.id} onDoubleClick={() => insertMediaAtPlayhead(item)}>
+        <div
+          className="flex-1 overflow-y-auto"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 1,
+            background: "var(--color-dark-border)",
+            alignContent: "start",
+          }}
+        >
+          {filteredMedia.map(item => (
+            <div
+              key={item.id}
+              style={{ minWidth: 0, overflow: "hidden" }}
+              onDoubleClick={() => insertMediaAtPlayhead(item)}
+            >
               <MediaCard
                 media={item}
                 objectUrl={getObjectUrl(item.id)}
@@ -276,7 +379,9 @@ export function MediaLibrary() {
             </div>
           ))}
           {pending.map(p => (
-            <LoadingCard key={p.tempId} fileName={p.fileName} />
+            <div key={p.tempId} style={{ minWidth: 0, overflow: "hidden" }}>
+              <LoadingCard fileName={p.fileName} />
+            </div>
           ))}
         </div>
       )}

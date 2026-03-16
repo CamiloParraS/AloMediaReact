@@ -21,9 +21,6 @@ import {
   MIN_PIXELS_PER_SECOND,
   MAX_PIXELS_PER_SECOND,
 } from "../../constants/timeline"
-import { IconButton } from "../ui/IconButton"
-import { Divider } from "../ui/Divider"
-import { LabelButton } from "../ui/LabelButton"
 
 const SHORTCUTS = [
   { keys: "Ctrl+Z",          action: "Undo" },
@@ -59,20 +56,55 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onPointerDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-dark-elevated border border-dark-border rounded-xl shadow-2xl w-[520px] p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-accent-white uppercase tracking-wider">Keyboard Shortcuts</h2>
-          <button onClick={onClose} className="text-muted hover:text-accent-white editor-transition">
-            <X size={16} />
+      <div
+        style={{
+          background: "var(--color-dark-elevated)",
+          border: "1px solid var(--color-dark-border)",
+          borderRadius: 0,
+          width: 520,
+          padding: 20,
+        }}
+      >
+        <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+          <h2
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "var(--color-muted)",
+            }}
+          >
+            Keyboard Shortcuts
+          </h2>
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", border: "none", color: "var(--color-muted)", cursor: "pointer", display: "flex", alignItems: "center" }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-accent-white)" }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-muted)" }}
+          >
+            <X size={14} />
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+        <div className="grid grid-cols-2" style={{ gap: "0 24px" }}>
           {[left, right].map((col, ci) => (
-            <div key={ci} className="flex flex-col gap-1">
+            <div key={ci} className="flex flex-col" style={{ gap: 2 }}>
               {col.map(({ keys, action }) => (
-                <div key={keys} className="flex items-center justify-between py-0.5">
-                  <span className="text-xs text-muted">{action}</span>
-                  <kbd className="text-[11px] font-mono bg-dark-card border border-dark-border rounded px-1.5 py-0.5 text-muted-light ml-3 shrink-0">
+                <div key={keys} className="flex items-center justify-between" style={{ padding: "2px 0" }}>
+                  <span style={{ fontSize: 10, color: "var(--color-muted)" }}>{action}</span>
+                  <kbd
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "'Courier New', monospace",
+                      background: "var(--color-dark-card)",
+                      border: "1px solid var(--color-dark-border)",
+                      borderRadius: 0,
+                      padding: "1px 6px",
+                      color: "var(--color-muted-light)",
+                      marginLeft: 12,
+                      flexShrink: 0,
+                    }}
+                  >
                     {keys}
                   </kbd>
                 </div>
@@ -82,6 +114,142 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// Reusable toolbar button
+function ToolbarBtn({
+  icon,
+  label,
+  onClick,
+  onPointerDown,
+  onPointerUp,
+  onPointerLeave,
+  onPointerCancel,
+  active = false,
+  snapOn = false,
+  disabled = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick?: () => void
+  onPointerDown?: () => void
+  onPointerUp?: () => void
+  onPointerLeave?: () => void
+  onPointerCancel?: () => void
+  active?: boolean
+  snapOn?: boolean
+  disabled?: boolean
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  const bg = snapOn
+    ? "var(--color-blood-red)"
+    : active || hovered
+      ? "var(--color-dark-elevated)"
+      : "transparent"
+
+  const iconColor = disabled
+    ? "var(--color-dark-border-light)"
+    : snapOn || active
+      ? "var(--color-accent-red)"
+      : hovered
+        ? "var(--color-accent-white)"
+        : "var(--color-muted-light)"
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerLeave={() => { setHovered(false); onPointerLeave?.() }}
+      onPointerCancel={onPointerCancel}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 28,
+        height: 28,
+        borderRadius: 0,
+        border: "none",
+        background: bg,
+        color: iconColor,
+        cursor: disabled ? "not-allowed" : "pointer",
+        flexShrink: 0,
+        transition: "background-color 150ms, color 150ms",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", width: 14, height: 14 }}>
+        {icon}
+      </span>
+    </button>
+  )
+}
+
+// Track add button with label
+function TrackBtn({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <button
+      type="button"
+      title={label}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        height: 28,
+        padding: "0 8px",
+        borderRadius: 0,
+        border: "none",
+        background: hovered ? "var(--color-dark-elevated)" : "transparent",
+        color: hovered ? "var(--color-accent-white)" : "var(--color-muted-light)",
+        cursor: "pointer",
+        flexShrink: 0,
+        transition: "background-color 150ms, color 150ms",
+        fontFamily: "inherit",
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.04em",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", width: 14, height: 14 }}>
+        {icon}
+      </span>
+      {label}
+    </button>
+  )
+}
+
+// Vertical divider between groups
+function GroupDivider() {
+  return (
+    <div
+      style={{
+        width: 1,
+        height: 20,
+        margin: "0 6px",
+        background: "var(--color-dark-border)",
+        flexShrink: 0,
+      }}
+    />
   )
 }
 
@@ -95,6 +263,7 @@ export function Toolbar() {
   const redo = useEditorStore(s => s.redo)
   const addTrack = useEditorStore(s => s.addTrack)
   const setTimelineScale = useEditorStore(s => s.setTimelineScale)
+  const timelineScale = useEditorStore(s => s.timelineScale)
   const [snapEnabled, setSnapEnabled] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
 
@@ -115,7 +284,6 @@ export function Toolbar() {
     if (zoomOutTimeoutRef.current !== null) { clearTimeout(zoomOutTimeoutRef.current); zoomOutTimeoutRef.current = null }
   }
 
-  // Clean up on unmount
   useEffect(() => () => { clearZoomIn(); clearZoomOut() }, [])
 
   const applyZoomIn = useCallback(() => {
@@ -146,92 +314,112 @@ export function Toolbar() {
     }, 400)
   }
 
+  // Compute zoom percentage from scale
+  const zoomPercent = Math.round((timelineScale / 100) * 100)
+
   return (
     <>
       <div
-        className="flex items-center gap-0.5 px-3 h-10 shrink-0 bg-dark-surface border-t border-b border-dark-border sticky top-0 z-10"
+        className="flex items-center shrink-0"
+        style={{
+          height: 36,
+          background: "var(--color-dark)",
+          borderTop: "1px solid var(--color-dark-border)",
+          borderBottom: "1px solid var(--color-dark-border)",
+          padding: "0 8px",
+          gap: 0,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          overflow: "hidden",
+        }}
       >
         {/* Edit group */}
-        <IconButton
-          icon={<Scissors />}
+        <ToolbarBtn
+          icon={<Scissors size={14} />}
           label="Cut at playhead"
-          size="sm"
           disabled={!selectedClipId}
           onClick={() => { if (selectedClipId) splitClip(selectedClipId, playhead) }}
         />
-        <IconButton icon={<Copy />} label="Copy" size="sm" onClick={copyClip} />
-        <IconButton icon={<Clipboard />} label="Paste" size="sm" onClick={pasteClip} />
+        <ToolbarBtn icon={<Copy size={14} />} label="Copy" onClick={copyClip} />
+        <ToolbarBtn icon={<Clipboard size={14} />} label="Paste" onClick={pasteClip} />
 
-        <Divider />
+        <GroupDivider />
 
         {/* History group */}
-        <IconButton icon={<Undo2 />} label="Undo" size="sm" onClick={undo} />
-        <IconButton icon={<Redo2 />} label="Redo" size="sm" onClick={redo} />
+        <ToolbarBtn icon={<Undo2 size={14} />} label="Undo" onClick={undo} />
+        <ToolbarBtn icon={<Redo2 size={14} />} label="Redo" onClick={redo} />
 
-        <Divider />
+        <GroupDivider />
 
-        {/* Zoom group — hold-to-zoom */}
-        <IconButton
-          icon={<ZoomIn />}
-          label="Zoom in"
-          size="sm"
-          onPointerDown={startZoomIn}
-          onPointerUp={clearZoomIn}
-          onPointerLeave={clearZoomIn}
-          onPointerCancel={clearZoomIn}
-        />
-        <IconButton
-          icon={<ZoomOut />}
+        {/* Zoom group */}
+        <ToolbarBtn
+          icon={<ZoomOut size={14} />}
           label="Zoom out"
-          size="sm"
           onPointerDown={startZoomOut}
           onPointerUp={clearZoomOut}
           onPointerLeave={clearZoomOut}
           onPointerCancel={clearZoomOut}
         />
-        <IconButton
-          icon={<Maximize2 />}
+        {/* Zoom percentage display */}
+        <div
+          style={{
+            width: 44,
+            textAlign: "center",
+            fontSize: 10,
+            fontFamily: "'Courier New', monospace",
+            color: "var(--color-muted)",
+            flexShrink: 0,
+          }}
+        >
+          {zoomPercent}%
+        </div>
+        <ToolbarBtn
+          icon={<ZoomIn size={14} />}
+          label="Zoom in"
+          onPointerDown={startZoomIn}
+          onPointerUp={clearZoomIn}
+          onPointerLeave={clearZoomIn}
+          onPointerCancel={clearZoomIn}
+        />
+        <ToolbarBtn
+          icon={<Maximize2 size={14} />}
           label="Fit to screen"
-          size="sm"
           onClick={() => seek(0)}
         />
 
-        <Divider />
+        <GroupDivider />
 
         {/* Snap toggle */}
-        <IconButton
-          icon={<Magnet />}
+        <ToolbarBtn
+          icon={<Magnet size={14} />}
           label={snapEnabled ? "Disable snap" : "Enable snap"}
-          size="sm"
-          active={snapEnabled}
+          snapOn={snapEnabled}
           onClick={() => setSnapEnabled(v => !v)}
         />
 
-        <Divider />
+        <GroupDivider />
 
-        <LabelButton
-          icon={<Film />}
+        {/* Track buttons */}
+        <TrackBtn
+          icon={<Film size={14} />}
           label="+ Video Track"
-          variant="ghost"
-          size="sm"
           onClick={() => addTrack("video")}
         />
-        <LabelButton
-          icon={<Music />}
+        <TrackBtn
+          icon={<Music size={14} />}
           label="+ Audio Track"
-          variant="ghost"
-          size="sm"
           onClick={() => addTrack("audio")}
         />
 
-        <div className="ml-auto">
-          <IconButton
-            icon={<HelpCircle />}
-            label="Keyboard shortcuts"
-            size="sm"
-            onClick={() => setShowShortcuts(true)}
-          />
-        </div>
+        <div style={{ flex: 1 }} />
+
+        {/* Help */}
+        <ToolbarBtn
+          icon={<HelpCircle size={14} />}
+          label="Keyboard shortcuts"
+          onClick={() => setShowShortcuts(true)}
+        />
       </div>
 
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}

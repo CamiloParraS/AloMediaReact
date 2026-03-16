@@ -58,13 +58,13 @@ export function PlayheadBar({ totalWidth, duration, majorInterval }: PlayheadBar
       onMouseDown={handleMouseDown}
       style={{
         position: "relative",
-        height: 32,
+        height: 24,
         minWidth: totalWidth,
-        borderBottom: "1px solid var(--color-dark-elevated)",
+        borderBottom: "1px solid var(--color-dark-border)",
         cursor: "pointer",
         userSelect: "none",
         flexShrink: 0,
-        backgroundColor: "var(--surface-ruler)",
+        background: "var(--color-dark)",
       }}
     >
       {ticks.map(({ t, isMajor }) => (
@@ -80,24 +80,42 @@ export function PlayheadBar({ totalWidth, duration, majorInterval }: PlayheadBar
             pointerEvents: "none",
           }}
         >
-          <div style={{ width: 1, height: isMajor ? 14 : 8, backgroundColor: isMajor ? "var(--color-ruler-tick-major)" : "var(--color-ruler-tick-minor)" }} />
+          {/* Tick mark */}
+          <div
+            style={{
+              width: 1,
+              height: isMajor ? 10 : 5,
+              background: isMajor
+                ? "var(--color-dark-border-light)"
+                : "var(--color-dark-border-light)",
+              opacity: isMajor ? 1 : 0.5,
+            }}
+          />
           {isMajor && (
-            <span className="text-[10px] text-muted-light ml-0.5 leading-tight">
+            <span
+              style={{
+                fontSize: 9,
+                fontFamily: "'Courier New', monospace",
+                color: "var(--color-muted)",
+                marginLeft: 2,
+                lineHeight: 1,
+              }}
+            >
               {formatTimecode(t)}
             </span>
           )}
         </div>
       ))}
 
-      {/* Draggable handle — circle sitting at the top of the playhead needle */}
+      {/* Playhead handle — 8px circle at ruler */}
       <div
         style={{
           position: "absolute",
-          left: TRACK_HEADER_WIDTH + playheadLeft - 6,
-          top: 10,
-          width: 12,
-          height: 12,
-          backgroundColor: "var(--color-accent-red)",
+          left: TRACK_HEADER_WIDTH + playheadLeft - 4,
+          top: 8,
+          width: 8,
+          height: 8,
+          background: "var(--color-accent-red)",
           borderRadius: "50%",
           cursor: "ew-resize",
           zIndex: 20,
