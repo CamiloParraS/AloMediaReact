@@ -2,13 +2,12 @@ import { useCallback, useEffect, useRef } from "react"
 import { useEditorStore } from "../store/editorStore"
 import { getProjectDuration } from "../utils/time"
 import { STORE_SYNC_INTERVAL_MS } from "../constants/timeline"
-import { releaseAllBuffers } from "../player/video/videoBuffer"
-import { disconnectAll } from "../player/audio/audioSync"
+import { createRafLoop } from "../player/core/rafLoop"
+import { teardownPlayerState } from "../player/core/playerReset"
 
 // Shared refs — live playhead and playing flag readable from RAF without React re-renders
 const playheadRef = { current: 0 }
 const isPlayingRef = { current: false }
-const playGenRef = { current: 0 }
 const onFrameRef = { current: null as ((playhead: number) => void) | null }
 
 export { playheadRef, isPlayingRef }
@@ -29,75 +28,49 @@ export function usePlayer() {
   const setPlayhead = useEditorStore(s => s.setPlayhead)
   const isPlaying = useEditorStore(s => s.isPlaying)
 
-  const rafRef = useRef<number | undefined>(undefined)
-  const lastWallTimeRef = useRef(0)
-  const lastStoreSyncRef = useRef(0)
   const needsReinitRef = useRef(false)
+  // Exposed so PreviewPlayer can reset clipSeekDoneRef on explicit seeks
+  const seekFlagResetRef = useRef<(() => void) | null>(null)
 
-  const play = useCallback(() => {
-    if (isPlayingRef.current) return
-    playheadRef.current = Math.max(0, useEditorStore.getState().playhead)
-    if (needsReinitRef.current) {
-      onFrameRef.current?.(playheadRef.current)
-      needsReinitRef.current = false
-    }
-    lastWallTimeRef.current = performance.now()
-    lastStoreSyncRef.current = performance.now()
-    isPlayingRef.current = true
-    useEditorStore.getState().setIsPlaying(true)
-
-    playGenRef.current += 1
-    const myGen = playGenRef.current
-
-    function frame(wallTime: number) {
-      if (!isPlayingRef.current || playGenRef.current !== myGen) return
-
-      const delta = (wallTime - lastWallTimeRef.current) / 1000
-      lastWallTimeRef.current = wallTime
-      playheadRef.current = Math.max(0, playheadRef.current + delta)
-
-      const duration = getProjectDuration(useEditorStore.getState().project.tracks)
-
-      if (playheadRef.current >= duration) {
-        playheadRef.current = duration
-        isPlayingRef.current = false
-        useEditorStore.getState().setPlayhead(duration)
-        useEditorStore.getState().setIsPlaying(false)
-        return
-      }
-
-      // Call the per-frame sync callback (media element sync) — no React involved
-      onFrameRef.current?.(playheadRef.current)
-
-      // Throttled store sync for timeline needle & timecode display
-      if (wallTime - lastStoreSyncRef.current >= STORE_SYNC_INTERVAL_MS) {
-        useEditorStore.getState().setPlayhead(playheadRef.current)
-        lastStoreSyncRef.current = wallTime
-      }
-
-      rafRef.current = requestAnimationFrame(frame)
-    }
-
-    rafRef.current = requestAnimationFrame(frame)
-  }, [])
+  const loopRef = useRef(createRafLoop({
+    syncInterval: STORE_SYNC_INTERVAL_MS,
+    getDuration: () => getProjectDuration(useEditorStore.getState().project.tracks),
+    onFrame: (ph) => {
+      playheadRef.current = ph
+      onFrameRef.current?.(ph)
+    },
+    onEnd: (duration) => {
+      playheadRef.current = duration
+      isPlayingRef.current = false
+      useEditorStore.getState().setPlayhead(duration)
+      useEditorStore.getState().setIsPlaying(false)
+    },
+    onStoreSync: (ph) => {
+      useEditorStore.getState().setPlayhead(ph)
+    },
+  }))
 
   const pause = useCallback(() => {
-    if (!isPlayingRef.current && rafRef.current === undefined) {
-      return
-    }
-    playGenRef.current += 1
-    if (rafRef.current !== undefined) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = undefined
-    }
+    if (!isPlayingRef.current) return
     isPlayingRef.current = false
+    loopRef.current.stop()
     // Final sync so store has the exact stop position
     useEditorStore.getState().setPlayhead(playheadRef.current)
     useEditorStore.getState().setIsPlaying(false)
   }, [])
 
-  // Exposed so PreviewPlayer can reset clipSeekDoneRef on explicit seeks
-  const seekFlagResetRef = useRef<(() => void) | null>(null)
+  const play = useCallback(() => {
+    if (isPlayingRef.current) return
+    const initialPlayhead = Math.max(0, useEditorStore.getState().playhead)
+    playheadRef.current = initialPlayhead
+    if (needsReinitRef.current) {
+      onFrameRef.current?.(initialPlayhead)
+      needsReinitRef.current = false
+    }
+    isPlayingRef.current = true
+    useEditorStore.getState().setIsPlaying(true)
+    loopRef.current.start(initialPlayhead)
+  }, [])
 
   const seek = useCallback((time: number) => {
     playheadRef.current = time
@@ -107,22 +80,7 @@ export function usePlayer() {
   }, [setPlayhead])
 
   const resetPlayerState = useCallback(() => {
-    const wasPlaying = isPlayingRef.current
-    playGenRef.current += 1
-    if (wasPlaying) {
-      pause()
-    }
-    releaseAllBuffers()
-    disconnectAll()
-    needsReinitRef.current = true
-    if (wasPlaying) {
-      playheadRef.current = 0
-      useEditorStore.getState().setPlayhead(0)
-      useEditorStore.getState().setIsPlaying(false)
-    } else {
-      useEditorStore.getState().setIsPlaying(false)
-      onFrameRef.current?.(playheadRef.current)
-    }
+    teardownPlayerState({ pause, isPlayingRef, needsReinitRef, playheadRef, onFrameRef })
   }, [pause])
 
   useEffect(() => {
