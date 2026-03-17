@@ -45,7 +45,7 @@ export function RangeSlider({
         value={value}
         aria-label={label}
         onChange={e => onChange(Number(e.target.value))}
-        className="editor-range flex-1"
+        className="editor-range flex-1 cursor-pointer"
         style={{ "--range-fill": `${fillPercent}%` } as React.CSSProperties}
         {...props}
       />

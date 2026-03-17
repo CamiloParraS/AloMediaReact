@@ -2,7 +2,12 @@ import { create } from "zustand"
 import { generateId } from "../utils/id"
 import { TIMELINE_ZOOM } from "../constants/timeline"
 import { getInsertionIndex } from "../utils/tracks"
-import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType } from "../project/projectTypes"
+import { toMs, toSeconds } from "../utils/time"
+import type { Clip, EditorState, Media, MediaType, Project, Track, TrackType, Transform, ColorAdjustments, AudioConfig } from "../project/projectTypes"
+import { DEFAULT_AUDIO_CONFIG } from "../constants/audioConfig"
+import { DEFAULT_SPEED, MAX_SPEED, MIN_SPEED } from "../constants/speed"
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../constants/colorAdjustments"
+import { resetPlayer, renderSingleFrame } from "../hooks/usePlayer"
 
 export interface ProxyState {
   status: 'pending' | 'ready' | 'error'
@@ -23,8 +28,14 @@ type StoreActions = {
   removeTrack: (trackId: string) => void
   reorderTrack: (sourceTrackId: string, targetTrackId: string) => void
   resizeClip: (clipId: string, newEnd: number) => void
-  updateClipTransform: (clipId: string, transform: Partial<import('./projectTypes').Transform>) => void
+  updateClipTransform: (clipId: string, transform: Partial<Transform>) => void
   commitTransform: (clipId: string) => void
+  updateClipColorAdjustments: (clipId: string, adjustments: ColorAdjustments) => void
+  updateClipAudioConfig: (clipId: string, config: Partial<AudioConfig>) => void
+  setClipSpeed: (clipId: string, speed: number) => void
+  extractAudioFromClip: (clipId: string) => void
+  copyClip: () => void
+  pasteClip: () => void
   setPlayhead: (time: number) => void
   setIsPlaying: (value: boolean) => void
   setTimelineScale: (scale: number) => void
@@ -33,11 +44,14 @@ type StoreActions = {
   pushHistory: (description: string) => void
   undo: () => void
   redo: () => void
+  removeMedia: (mediaId: string) => void
   proxyMap: Record<string, ProxyState>
   setProxyState: (mediaId: string, state: ProxyState) => void
 }
 
-type EditorStore = EditorState & StoreActions
+type EditorStore = EditorState & {
+  clipboard: Clip | null
+} & StoreActions
 
 function makeInitialProject(): Project {
   return {
@@ -82,6 +96,14 @@ function detectMediaType(file: File): MediaType {
   return "image"
 }
 
+function findClipById(tracks: Track[], clipId: string): Clip | undefined {
+  for (const track of tracks) {
+    const clip = track.clips.find(c => c.id === clipId)
+    if (clip) return clip
+  }
+  return undefined
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   project: makeInitialProject(),
   playhead: 0,
@@ -89,6 +111,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   isPlaying: false,
   history: [],
   historyIndex: -1,
+  clipboard: null,
   proxyMap: {},
 
   setProxyState(mediaId: string, state: ProxyState): void {
@@ -133,12 +156,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   addClip(clip: Clip): void {
     get().pushHistory("Add clip")
+    resetPlayer()
+    // Initialize audioConfig for video and audio clips if not already set
+    const prepared: Clip = (() => {
+      if (clip.type === "video" || clip.type === "audio") {
+        const clampedSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, clip.speed ?? DEFAULT_SPEED))
+        return {
+          ...clip,
+          speed: clampedSpeed,
+          audioConfig: clip.audioConfig ?? { ...DEFAULT_AUDIO_CONFIG },
+        }
+      }
+      return clip
+    })()
     set(state => ({
       project: {
         ...state.project,
         tracks: state.project.tracks.map(track =>
           track.id === clip.trackId
-            ? { ...track, clips: [...track.clips, clip] }
+            ? { ...track, clips: [...track.clips, prepared] }
             : track
         ),
       },
@@ -147,6 +183,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   removeClip(clipId: string): void {
     get().pushHistory("Remove clip")
+    resetPlayer()
     set(state => ({
       project: {
         ...state.project,
@@ -160,6 +197,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   moveClip(clipId: string, newStart: number, trackId: string): void {
     get().pushHistory("Move clip")
+    resetPlayer()
     set(state => {
       let targetClip: Clip | undefined
 
@@ -175,12 +213,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       if (!targetClip) return state
 
+      const roundedStart = toSeconds(toMs(newStart))
       const duration = targetClip.timelineEnd - targetClip.timelineStart
       const updatedClip: Clip = {
         ...targetClip,
         trackId,
-        timelineStart: newStart,
-        timelineEnd: newStart + duration,
+        timelineStart: roundedStart,
+        timelineEnd: toSeconds(toMs(roundedStart + duration)),
       }
 
       return {
@@ -255,6 +294,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   resizeClip(clipId: string, newEnd: number): void {
+    resetPlayer()
     set(state => ({
       project: {
         ...state.project,
@@ -270,7 +310,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }))
   },
 
-  updateClipTransform(clipId: string, transform: Partial<import('./projectTypes').Transform>): void {
+  updateClipTransform(clipId: string, transform: Partial<Transform>): void {
     set(state => ({
       project: {
         ...state.project,
@@ -284,10 +324,197 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         })),
       },
     }))
+    renderSingleFrame()
+    resetPlayer()
   },
 
-  commitTransform(clipId: string): void {
+  commitTransform(_clipId: string): void {
     get().pushHistory('Transform clip')
+    renderSingleFrame()
+    resetPlayer()
+  },
+
+  updateClipColorAdjustments(clipId: string, adjustments: ColorAdjustments): void {
+    get().pushHistory('Color adjustment')
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            if (clip.id !== clipId) return clip
+            if (clip.type !== 'video' && clip.type !== 'image') return clip
+            return { ...clip, colorAdjustments: adjustments }
+          }),
+        })),
+      },
+    }))
+    resetPlayer()
+  },
+
+  updateClipAudioConfig(clipId: string, config: Partial<AudioConfig>): void {
+    get().pushHistory("Audio config")
+    set(state => ({
+      project: {
+        ...state.project,
+        tracks: state.project.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            if (clip.id !== clipId) return clip
+            if (clip.type !== "video" && clip.type !== "audio") return clip
+            const existing = (clip as any).audioConfig ?? { ...DEFAULT_AUDIO_CONFIG }
+            return { ...clip, audioConfig: { ...existing, ...config } }
+          }),
+        })),
+      },
+    }))
+    resetPlayer()
+  },
+
+  setClipSpeed(clipId: string, speed: number): void {
+    const state = get()
+    const clipExists = state.project.tracks.some(track =>
+      track.clips.some(c => c.id === clipId && (c.type === "video" || c.type === "audio")),
+    )
+    if (!clipExists) return
+
+    const clampedSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed))
+
+    set(curr => ({
+      project: {
+        ...curr.project,
+        tracks: curr.project.tracks.map(track => {
+          const targetClip = track.clips.find(c => c.id === clipId)
+          if (!targetClip || (targetClip.type !== "video" && targetClip.type !== "audio")) {
+            return track
+          }
+
+          const baseDuration = targetClip.mediaEnd - targetClip.mediaStart
+          const computedTimelineEnd = toSeconds(toMs(targetClip.timelineStart + (baseDuration / clampedSpeed)))
+          const nextTimelineStart = track.clips
+            .filter(c => c.id !== clipId && c.timelineStart >= targetClip.timelineStart)
+            .reduce<number | null>((next, c) => {
+              if (next == null) return c.timelineStart
+              return Math.min(next, c.timelineStart)
+            }, null)
+
+          const maxEnd = nextTimelineStart ?? Number.POSITIVE_INFINITY
+          const clampedTimelineEnd = toSeconds(
+            toMs(Math.max(targetClip.timelineStart, Math.min(computedTimelineEnd, maxEnd))),
+          )
+
+          return {
+            ...track,
+            clips: track.clips.map(clip => {
+              if (clip.id !== clipId) return clip
+              if (clip.type !== "video" && clip.type !== "audio") return clip
+              return {
+                ...clip,
+                speed: clampedSpeed,
+                timelineEnd: clampedTimelineEnd,
+              }
+            }),
+          }
+        }),
+      },
+    }))
+
+    get().pushHistory("Set clip speed")
+    resetPlayer()
+  },
+
+  extractAudioFromClip(clipId: string): void {
+    const state = get()
+    const sourceClip = findClipById(state.project.tracks, clipId)
+    if (!sourceClip || sourceClip.type !== "video") return
+
+    const fallbackTrack = state.project.tracks.find(t => t.type === "audio") ?? get().addTrack("audio")
+
+    const newClip: Clip = {
+      id: generateId(),
+      type: "audio",
+      mediaId: sourceClip.mediaId,
+      trackId: fallbackTrack.id,
+      timelineStart: sourceClip.timelineStart,
+      timelineEnd: sourceClip.timelineEnd,
+      mediaStart: sourceClip.mediaStart,
+      mediaEnd: sourceClip.mediaEnd,
+      volume: sourceClip.volume,
+      speed: sourceClip.speed ?? DEFAULT_SPEED,
+      audioConfig: { ...(sourceClip.audioConfig ?? DEFAULT_AUDIO_CONFIG) },
+    }
+
+    set(curr => ({
+      project: {
+        ...curr.project,
+        tracks: curr.project.tracks.map(track =>
+          track.id === fallbackTrack.id
+            ? { ...track, clips: [...track.clips, newClip] }
+            : track,
+        ),
+      },
+    }))
+    get().pushHistory("Extract audio")
+    resetPlayer()
+  },
+
+  copyClip(): void {
+    const state = get()
+    if (!state.selectedClipId) return
+    const selected = findClipById(state.project.tracks, state.selectedClipId)
+    if (!selected || selected.type === "text") return
+    set({ clipboard: deepClone(selected) })
+  },
+
+  pasteClip(): void {
+    const state = get()
+    const { clipboard } = state
+    if (!clipboard || clipboard.type === "text") return
+
+    const trackType: TrackType = clipboard.type === "audio" ? "audio" : "video"
+    const targetTrack = state.project.tracks.find(t => t.type === trackType) ?? get().addTrack(trackType)
+    const candidateStart = toSeconds(toMs(state.playhead))
+    const sourceDuration = "mediaStart" in clipboard && "mediaEnd" in clipboard
+      ? (clipboard.mediaEnd - clipboard.mediaStart) / (clipboard.speed ?? 1)
+      : (clipboard.timelineEnd - clipboard.timelineStart)
+    const candidateEnd = toSeconds(toMs(candidateStart + sourceDuration))
+
+    const overlappingClips = targetTrack.clips.filter(
+      clip => clip.timelineStart < candidateEnd && clip.timelineEnd > candidateStart,
+    )
+
+    const resolvedStart = overlappingClips.length > 0
+      ? toSeconds(toMs(Math.max(...overlappingClips.map(clip => clip.timelineEnd))))
+      : candidateStart
+    const resolvedEnd = toSeconds(toMs(resolvedStart + sourceDuration))
+
+    const newClip: Clip = {
+      ...deepClone(clipboard),
+      id: generateId(),
+      trackId: targetTrack.id,
+      timelineStart: resolvedStart,
+      timelineEnd: resolvedEnd,
+      ...(clipboard.type === "video" || clipboard.type === "audio"
+        ? { audioConfig: { ...(clipboard.audioConfig ?? DEFAULT_AUDIO_CONFIG) } }
+        : {}),
+      ...(clipboard.type === "video" || clipboard.type === "image"
+        ? { colorAdjustments: { ...(clipboard.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) } }
+        : {}),
+      ...("transform" in clipboard ? { transform: { ...clipboard.transform } } : {}),
+    }
+
+    set(curr => ({
+      project: {
+        ...curr.project,
+        tracks: curr.project.tracks.map(track =>
+          track.id === targetTrack.id
+            ? { ...track, clips: [...track.clips, newClip] }
+            : track,
+        ),
+      },
+    }))
+    get().pushHistory("Paste clip")
+    resetPlayer()
   },
 
   splitClip(clipId: string, time: number): void {
@@ -303,22 +530,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       get().pushHistory("Split clip")
 
-      const splitPoint = time - clip.timelineStart
+      // Round cut time to nearest ms — both halves share the exact same value,
+      // guaranteeing clipA.timelineEnd === clipB.timelineStart with no float gap.
+      const cutTime = toSeconds(toMs(time))
+      const splitPoint = cutTime - clip.timelineStart
 
       const firstHalf: Clip = {
         ...deepClone(clip),
         id: generateId(),
-        timelineEnd: time,
+        timelineEnd: cutTime,
         // Adjust mediaEnd for media-backed clips
-        ...("mediaEnd" in clip ? { mediaEnd: clip.mediaStart + splitPoint } : {}),
+        ...("mediaEnd" in clip ? { mediaEnd: toSeconds(toMs(clip.mediaStart + splitPoint)) } : {}),
       } as Clip
 
       const secondHalf: Clip = {
         ...deepClone(clip),
         id: generateId(),
-        timelineStart: time,
+        timelineStart: cutTime,
         // Adjust mediaStart for media-backed clips
-        ...("mediaStart" in clip ? { mediaStart: clip.mediaStart + splitPoint } : {}),
+        ...("mediaStart" in clip ? { mediaStart: toSeconds(toMs(clip.mediaStart + splitPoint)) } : {}),
       } as Clip
 
       return {
@@ -335,7 +565,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setPlayhead(time: number): void {
-    set({ playhead: time })
+    // Round to nearest millisecond to eliminate sub-ms float drift
+    set({ playhead: toSeconds(toMs(time)) })
   },
 
   setIsPlaying(value: boolean): void {
@@ -376,5 +607,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (historyIndex >= history.length - 1) return
     const newIndex = historyIndex + 1
     set({ project: deepClone(history[newIndex].project), historyIndex: newIndex })
+  },
+
+  removeMedia(mediaId: string): void {
+    get().pushHistory("Remove media")
+    resetPlayer()
+    fileMap.delete(mediaId)
+    set(state => {
+      const { [mediaId]: _removed, ...restProxy } = state.proxyMap
+      return {
+        proxyMap: restProxy,
+        project: {
+          ...state.project,
+          media: state.project.media.filter(m => m.id !== mediaId),
+          tracks: state.project.tracks.map(track => ({
+            ...track,
+            clips: track.clips.filter(c => !("mediaId" in c) || c.mediaId !== mediaId),
+          })),
+        },
+      }
+    })
   },
 }))

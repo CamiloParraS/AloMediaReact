@@ -1,4 +1,4 @@
-import { useState, useEffect, type DragEvent } from "react"
+import { useState, useEffect, useRef, type DragEvent } from "react"
 import type { Clip } from "../../project/projectTypes"
 import { timeToPx, pxToTime } from "../../utils/time"
 import { useEditorStore } from "../../store/editorStore"
@@ -9,18 +9,25 @@ interface ClipProps {
   isSelected: boolean
   onSelect: (clipId: string) => void
   onDragStart: (e: DragEvent<HTMLDivElement>, clipId: string) => void
+  onDragEnd: () => void
 }
 
-export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }: ClipProps) {
+// Audio waveform: static decorative SVG as CSS background
+const AUDIO_WAVEFORM_BG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Crect x='2' y='6' width='2' height='8' fill='rgba(100,200,100,0.18)' /%3E%3Crect x='6' y='3' width='2' height='14' fill='rgba(100,200,100,0.18)' /%3E%3Crect x='10' y='7' width='2' height='6' fill='rgba(100,200,100,0.18)' /%3E%3Crect x='14' y='4' width='2' height='12' fill='rgba(100,200,100,0.18)' /%3E%3Crect x='18' y='8' width='2' height='4' fill='rgba(100,200,100,0.18)' /%3E%3C/svg%3E")`
+
+export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart, onDragEnd }: ClipProps) {
   const playhead = useEditorStore(s => s.playhead)
   const splitClip = useEditorStore(s => s.splitClip)
   const removeClip = useEditorStore(s => s.removeClip)
+  const extractAudioFromClip = useEditorStore(s => s.extractAudioFromClip)
   const resizeClip = useEditorStore(s => s.resizeClip)
   const pushHistory = useEditorStore(s => s.pushHistory)
   const projectMedia = useEditorStore(s => s.project.media)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [resizeHovered, setResizeHovered] = useState(false)
 
   function getClipLabel(): string {
     if (clip.type === "text") return clip.content || "Text"
@@ -28,24 +35,39 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
     return media?.name ?? clip.type
   }
 
-  // Close the context menu when the user clicks anywhere outside it
   useEffect(() => {
     if (!contextMenu) return
-    function close() { setContextMenu(null) }
-    document.addEventListener("click", close)
-    return () => document.removeEventListener("click", close)
+    function handleMouseDown(event: MouseEvent) {
+      if (!contextMenuRef.current?.contains(event.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setContextMenu(null)
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
   }, [contextMenu])
 
   const left = timeToPx(clip.timelineStart, scale)
   const width = timeToPx(clip.timelineEnd - clip.timelineStart, scale)
 
   const isAudio = clip.type === "audio"
-  const bgColor = isAudio
-    ? (isSelected ? "var(--surface-clip-audio-selected)" : "var(--surface-clip-audio)")
-    : (isSelected ? "var(--surface-clip-video-selected)" : "var(--surface-clip-video)")
-  const borderColor = isAudio
-    ? (isSelected ? "#15803d" : "#14532d")
-    : (isSelected ? "#4338ca" : "#312e81")
+
+  // Clip colors per spec
+  const bgColor = isAudio ? "#0f2a0f" : "#1a1a3a"
+  const borderColor = isSelected
+    ? "var(--color-accent-red)"
+    : isAudio
+      ? "#1a4a1a"
+      : "#2a2a5a"
+  const borderWidth = isSelected ? 2 : 1
 
   function handleResizeMouseDown(e: React.MouseEvent) {
     e.stopPropagation()
@@ -79,59 +101,129 @@ export function ClipComponent({ clip, scale, isSelected, onSelect, onDragStart }
     <>
       <div
         draggable
-        onDragStart={e => { setIsDragging(true); onDragStart(e, clip.id) }}
-        onDragEnd={() => setIsDragging(false)}
+        onDragStart={e => {
+          setIsDragging(true)
+          e.dataTransfer.setData("clipDuration", String(clip.timelineEnd - clip.timelineStart))
+          onDragStart(e, clip.id)
+        }}
+        onDragEnd={() => {
+          setIsDragging(false)
+          onDragEnd()
+          window.dispatchEvent(new CustomEvent("alomedia:drag-end"))
+        }}
         onClick={() => onSelect(clip.id)}
         onContextMenu={handleContextMenu}
-        className={`hover:brightness-110 transition-[filter,opacity] duration-150 ${isDragging ? "opacity-70" : ""}`}
         style={{
           position: "absolute",
           left,
           width: Math.max(width, 4),
-          top: 4,
-          bottom: 4,
-          backgroundColor: bgColor,
-          border: `${isSelected ? 2 : 1}px solid ${borderColor}`,
-          borderRadius: 4,
+          top: 2,
+          bottom: 2,
+          background: bgColor,
+          border: `${borderWidth}px solid ${borderColor}`,
+          borderRadius: 0,
           cursor: isDragging ? "grabbing" : "grab",
           overflow: "hidden",
           boxSizing: "border-box",
           userSelect: "none",
-          boxShadow: "inset 0 2px 0 rgba(255,255,255,0.08)",
+          opacity: isDragging ? 0.7 : 1,
+          // Audio waveform decorative background
+          backgroundImage: isAudio ? AUDIO_WAVEFORM_BG : undefined,
+          backgroundRepeat: isAudio ? "repeat-x" : undefined,
+          backgroundPosition: isAudio ? "0 center" : undefined,
         }}
       >
-        <span style={{ fontSize: 11, padding: "0 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", lineHeight: "100%", color: "rgba(255,255,255,0.85)" }}>
+        {/* Left edge in-point indicator */}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 3,
+            background: "var(--color-dark-border-light)",
+            flexShrink: 0,
+          }}
+        />
+
+        {/* Clip label */}
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 600,
+            padding: "0 6px 0 6px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            display: "block",
+            lineHeight: "100%",
+            color: "var(--color-muted-light)",
+            position: "absolute",
+            top: "50%",
+            transform: "translateY(-50%)",
+            left: 3,
+            right: 6,
+          }}
+        >
           {getClipLabel()}
         </span>
+
+        {/* Right resize handle */}
         <div
           onMouseDown={handleResizeMouseDown}
-          style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 8, cursor: "ew-resize" }}
+          onMouseEnter={() => setResizeHovered(true)}
+          onMouseLeave={() => setResizeHovered(false)}
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 6,
+            background: resizeHovered ? "var(--color-accent-red)" : "var(--color-dark-border-light)",
+            cursor: "ew-resize",
+            transition: "background-color 100ms",
+          }}
         />
       </div>
 
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           style={{
             position: "fixed",
             top: contextMenu.y,
             left: contextMenu.x,
-            backgroundColor: "var(--color-dark-card)",
+            background: "var(--color-dark-card)",
             border: "1px solid var(--color-dark-border)",
-            borderRadius: 6,
+            borderRadius: 0,
             zIndex: 100,
             minWidth: 160,
             boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
           }}
         >
           <div
-            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-accent-white)" }}
+            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 11, color: "var(--color-accent-white)" }}
             onClick={e => { e.stopPropagation(); splitClip(clip.id, playhead); setContextMenu(null) }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-dark-elevated)" }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent" }}
           >
             Split at playhead
           </div>
+          {clip.type === "video" && (
+            <div
+              style={{ padding: "6px 12px", cursor: "pointer", fontSize: 11, color: "var(--color-accent-white)" }}
+              onClick={e => { e.stopPropagation(); extractAudioFromClip(clip.id); setContextMenu(null) }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-dark-elevated)" }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent" }}
+            >
+              Extract Audio
+            </div>
+          )}
           <div
-            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "var(--color-destructive-light)" }}
+            style={{ padding: "6px 12px", cursor: "pointer", fontSize: 11, color: "var(--color-destructive-light)" }}
             onClick={e => { e.stopPropagation(); removeClip(clip.id); setContextMenu(null) }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-dark-elevated)" }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent" }}
           >
             Remove clip
           </div>

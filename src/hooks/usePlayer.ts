@@ -1,73 +1,96 @@
-import { useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useEditorStore } from "../store/editorStore"
 import { getProjectDuration } from "../utils/time"
+import { STORE_SYNC_INTERVAL_MS } from "../constants/timeline"
+import { createRafLoop } from "../player/core/rafLoop"
+import { teardownPlayerState } from "../player/core/playerReset"
 
-/** Returns true when there is no video clip covering the given time (a "gap"). */
-function isInGap(time: number): boolean {
-  const { project } = useEditorStore.getState()
-  const videoTracks = project.tracks.filter(t => t.type === "video")
-  if (videoTracks.length === 0) return false
-  const allClips = videoTracks.flatMap(t => t.clips)
-  if (allClips.length === 0) return false
-  return !allClips.some(c => c.timelineStart <= time && time < c.timelineEnd)
+// Shared refs — live playhead and playing flag readable from RAF without React re-renders
+const playheadRef = { current: 0 }
+const isPlayingRef = { current: false }
+const onFrameRef = { current: null as ((playhead: number) => void) | null }
+
+export { playheadRef, isPlayingRef }
+
+let resetPlayerImpl: (() => void) | null = null
+
+export function resetPlayer(): void {
+  resetPlayerImpl?.()
+}
+
+export function renderSingleFrame(): void {
+  if (isPlayingRef.current) return
+  if (!onFrameRef.current) return
+  onFrameRef.current(playheadRef.current)
 }
 
 export function usePlayer() {
   const setPlayhead = useEditorStore(s => s.setPlayhead)
   const isPlaying = useEditorStore(s => s.isPlaying)
 
-  const rafRef = useRef<number | undefined>(undefined)
-  // Single reference point — reset on play() start and every seek() call.
-  // This fixes playhead drift when the user scrubs while the RAF loop is running.
-  const seekRef = useRef<{ wallTime: number; playhead: number }>({ wallTime: 0, playhead: 0 })
+  const needsReinitRef = useRef(false)
+  // Exposed so PreviewPlayer can reset clipSeekDoneRef on explicit seeks
+  const seekFlagResetRef = useRef<(() => void) | null>(null)
 
-  function play() {
-    if (isPlaying) return
-    // Initialize seekRef before setIsPlaying so the first frame has a valid reference point
-    seekRef.current = { wallTime: performance.now(), playhead: useEditorStore.getState().playhead }
-    useEditorStore.getState().setIsPlaying(true)
+  const loopRef = useRef(createRafLoop({
+    syncInterval: STORE_SYNC_INTERVAL_MS,
+    getDuration: () => getProjectDuration(useEditorStore.getState().project.tracks),
+    onFrame: (ph) => {
+      playheadRef.current = ph
+      onFrameRef.current?.(ph)
+    },
+    onEnd: (duration) => {
+      playheadRef.current = duration
+      isPlayingRef.current = false
+      useEditorStore.getState().setPlayhead(duration)
+      useEditorStore.getState().setIsPlaying(false)
+    },
+    onStoreSync: (ph) => {
+      useEditorStore.getState().setPlayhead(ph)
+    },
+  }))
 
-    function frame() {
-      // Read isPlaying from store snapshot — avoids stale closure after pause()
-      if (!useEditorStore.getState().isPlaying) return
-
-      const elapsed = (performance.now() - seekRef.current.wallTime) / 1000
-      const newPlayhead = seekRef.current.playhead + elapsed
-      const duration = getProjectDuration(useEditorStore.getState().project.tracks)
-
-      if (newPlayhead >= duration) {
-        useEditorStore.getState().setPlayhead(duration)
-        useEditorStore.getState().setIsPlaying(false)
-        return
-      }
-
-      // Stop playback when the playhead enters a gap (no video clip at this time)
-      if (isInGap(newPlayhead)) {
-        useEditorStore.getState().setPlayhead(newPlayhead)
-        useEditorStore.getState().setIsPlaying(false)
-        return
-      }
-
-      useEditorStore.getState().setPlayhead(newPlayhead)
-      rafRef.current = requestAnimationFrame(frame)
-    }
-
-    rafRef.current = requestAnimationFrame(frame)
-  }
-
-  function pause() {
-    if (rafRef.current !== undefined) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = undefined
-    }
+  const pause = useCallback(() => {
+    if (!isPlayingRef.current) return
+    isPlayingRef.current = false
+    loopRef.current.stop()
+    // Final sync so store has the exact stop position
+    useEditorStore.getState().setPlayhead(playheadRef.current)
     useEditorStore.getState().setIsPlaying(false)
-  }
+  }, [])
 
-  function seek(time: number) {
+  const play = useCallback(() => {
+    if (isPlayingRef.current) return
+    const initialPlayhead = Math.max(0, useEditorStore.getState().playhead)
+    playheadRef.current = initialPlayhead
+    if (needsReinitRef.current) {
+      onFrameRef.current?.(initialPlayhead)
+      needsReinitRef.current = false
+    }
+    isPlayingRef.current = true
+    useEditorStore.getState().setIsPlaying(true)
+    loopRef.current.start(initialPlayhead)
+  }, [])
+
+  const seek = useCallback((time: number) => {
+    playheadRef.current = time
     setPlayhead(time)
-    // Reset reference point so the playback loop continues from the new position
-    seekRef.current = { wallTime: performance.now(), playhead: time }
-  }
+    // Signal PreviewPlayer to force re-seek on next frame
+    seekFlagResetRef.current?.()
+  }, [setPlayhead])
 
-  return { play, pause, seek, isPlaying }
+  const resetPlayerState = useCallback(() => {
+    teardownPlayerState({ pause, isPlayingRef, needsReinitRef, playheadRef, onFrameRef })
+  }, [pause])
+
+  useEffect(() => {
+    resetPlayerImpl = resetPlayerState
+    return () => {
+      if (resetPlayerImpl === resetPlayerState) {
+        resetPlayerImpl = null
+      }
+    }
+  }, [resetPlayerState])
+
+  return { play, pause, seek, isPlaying, onFrameRef, playheadRef, seekFlagResetRef, resetPlayer: resetPlayerState }
 }

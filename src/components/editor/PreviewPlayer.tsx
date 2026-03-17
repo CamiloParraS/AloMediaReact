@@ -1,31 +1,74 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { SkipBack, Rewind, Play, Pause, FastForward, SkipForward, Volume2, VolumeX } from "lucide-react"
-import type { AudioClip, ImageClip, TextClip, Transform, VideoClip } from "../../project/projectTypes"
+import type { VideoClip, ImageClip, TextClip } from "../../project/projectTypes"
 import { useEditorStore } from "../../store/editorStore"
-import { fileMap } from "../../store/editorStore"
 import { usePlayer } from "../../hooks/usePlayer"
-import { getProjectDuration } from "../../utils/time"
+import { getProjectDuration, CLIP_EPSILON } from "../../utils/time"
+import { useMediaSync } from "../../player/hooks/useMediaSync"
+import { applyTransform } from "../../player/render/transformUtils"
+import { buildCssFilter } from "../../utils/colorAdjustmentFilters"
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
+import { setupCanvasScaling } from "../../player/render/canvasScaling"
 import { TransformOverlay } from "./TransformOverlay"
-import { IconButton } from "../ui/IconButton"
 import { RangeSlider } from "../ui/RangeSlider"
+import { getActiveVideoClip } from "../../player/timeline/activeClipResolver"
+import { DEFAULT_SPEED } from "../../constants/speed"
 
-function formatTime(seconds: number): string {
+function formatTimecode(seconds: number): string {
+  seconds = Math.max(0, isFinite(seconds) ? seconds : 0)
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = Math.floor(seconds % 60)
-  if (h > 0) return [h, m, s].map(v => String(v).padStart(2, "0")).join(":")
-  return [m, s].map(v => String(v).padStart(2, "0")).join(":")
+  const f = Math.floor((seconds % 1) * 30) // 30fps approximation
+  return [
+    String(h).padStart(2, "0"),
+    String(m).padStart(2, "0"),
+    String(s).padStart(2, "0"),
+    String(f).padStart(2, "0"),
+  ].join(":")
 }
 
-function applyTransform(t: Transform): React.CSSProperties {
-  return {
-    position: "absolute",
-    left: t.x,
-    top: t.y,
-    width: t.width,
-    height: t.height,
-    transform: `rotate(${t.rotation}deg)`,
-  }
+function TransportBtn({
+  icon,
+  label,
+  onClick,
+  primary = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  primary?: boolean
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: primary ? 32 : 28,
+        height: primary ? 32 : 28,
+        flexShrink: 0,
+        borderRadius: 0,
+        border: "none",
+        background: primary || hovered ? "var(--color-dark-elevated)" : "transparent",
+        color: "var(--color-muted-light)",
+        cursor: "pointer",
+        transition: "background-color 150ms",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", width: primary ? 16 : 14, height: primary ? 16 : 14 }}>
+        {icon}
+      </span>
+    </button>
+  )
 }
 
 export function PreviewPlayer() {
@@ -36,211 +79,161 @@ export function PreviewPlayer() {
   const updateClipTransform = useEditorStore(s => s.updateClipTransform)
   const commitTransform = useEditorStore(s => s.commitTransform)
   const setSelectedClip = useEditorStore(s => s.setSelectedClip)
-  const proxyMap = useEditorStore(s => s.proxyMap)
-  const { play, pause, seek } = usePlayer()
-  const duration = getProjectDuration(project.tracks)
+  const { play, pause, seek, onFrameRef, playheadRef, seekFlagResetRef } = usePlayer()
+  const tracks = project.tracks
+  const duration = getProjectDuration(tracks)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const innerCanvasRef = useRef<HTMLDivElement>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [volume, setVolume] = useState(1)
-  // Computed scale: inner 1280×720 canvas → container actual width
-  const [canvasScale, setCanvasScale] = useState(0.5)
 
-  // Keep canvasScale in sync with the container's rendered width
+  const secondaryVideoElemsRef = useRef<Map<string, HTMLVideoElement>>(new Map())
+  const secondaryClipsRef = useRef<VideoClip[]>([])
+
   useEffect(() => {
-    const el = canvasContainerRef.current
-    if (!el) return
-    const update = () => setCanvasScale(el.clientWidth / 1280)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
+    const container = canvasContainerRef.current
+    const inner = innerCanvasRef.current
+    if (!container || !inner) return
+    return setupCanvasScaling(container, inner)
   }, [])
 
-  // Object URL registry — create once per mediaId, revoke on unmount
-  const objectUrlsRef = useRef<Map<string, string>>(new Map())
-  // Element refs for video/audio sync — keyed by clipId
-  const mediaRefsRef = useRef<Map<string, HTMLVideoElement | HTMLAudioElement>>(new Map())
+  const { videoRefA, videoRefB, getObjectUrl, getPlaybackUrl } = useMediaSync({
+    onFrameRef,
+    seekFlagResetRef,
+    playheadRef,
+    isMuted,
+    volume,
+    secondaryVideoElemsRef,
+    secondaryClipsRef,
+  })
 
-  function getObjectUrl(mediaId: string): string | undefined {
-    const existing = objectUrlsRef.current.get(mediaId)
-    if (existing) return existing
-    const file = fileMap.get(mediaId)
-    if (!file) return undefined
-    const url = URL.createObjectURL(file)
-    objectUrlsRef.current.set(mediaId, url)
-    return url
-  }
-
-  // Use proxy URL for video playback when ready; fall back to original
-  function getPlaybackUrl(mediaId: string): string | undefined {
-    const proxy = proxyMap[mediaId]
-    if (proxy?.status === 'ready' && proxy.objectUrl) return proxy.objectUrl
-    return getObjectUrl(mediaId)
-  }
-
-  // Revoke all object URLs when the component unmounts
-  useEffect(() => {
-    return () => {
-      objectUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
-    }
-  }, [])
-
-  // Sync currentTime on every playhead change — covers scrubbing when paused.
-  // Also pauses elements whose clip is no longer at the current playhead position.
-  useEffect(() => {
-    const { project: p, playhead: ph, isPlaying: playing } = useEditorStore.getState()
-
-    const activeIds = new Set(
-      p.tracks.flatMap(t =>
-        t.clips.filter(c => c.timelineStart <= ph && ph <= c.timelineEnd).map(c => c.id)
-      )
-    )
-
-    // Pause and reset clips that just left the active range
-    for (const [clipId, el] of mediaRefsRef.current) {
-      if (!activeIds.has(clipId)) {
-        el.pause()
-        for (const track of p.tracks) {
-          const clip = track.clips.find(c => c.id === clipId)
-          if (clip && (clip.type === "video" || clip.type === "audio")) {
-            el.currentTime = (clip as VideoClip | AudioClip).mediaStart
-            break
-          }
-        }
-      }
-    }
-
-    if (playing) return // RAF loop owns sync during active playback
-
-    for (const track of p.tracks) {
-      for (const clip of track.clips) {
-        if (!activeIds.has(clip.id)) continue
-        if (clip.type !== "video" && clip.type !== "audio") continue
-        const el = mediaRefsRef.current.get(clip.id)
-        if (!el || el.readyState < 1) continue // skip if metadata not yet loaded
-        const offset = ph - clip.timelineStart
-        el.currentTime = (clip as VideoClip | AudioClip).mediaStart + offset
-      }
-    }
-  }, [playhead])
-
-  // Play or pause all active media elements when isPlaying toggles
-  useEffect(() => {
-    const { project: p, playhead: ph } = useEditorStore.getState()
-    for (const track of p.tracks) {
-      for (const clip of track.clips) {
-        if (clip.timelineStart > ph || ph > clip.timelineEnd) continue
-        if (clip.type !== "video" && clip.type !== "audio") continue
-        const el = mediaRefsRef.current.get(clip.id)
-        if (!el) continue
-        if (isPlaying) {
-          el.play().catch(() => {})
-        } else {
-          el.pause()
-        }
-      }
-    }
-  }, [isPlaying])
-
-  // Render highest-order tracks first so track 0 (index 0) is painted last = on top
-  const sortedTracks = [...project.tracks].sort((a, b) => b.order - a.order)
-
-  const activeClips = sortedTracks.flatMap(track =>
-    track.clips.filter(
-      clip => clip.timelineStart <= playhead && playhead <= clip.timelineEnd
-    )
+  const sortedTracks = useMemo(
+    () => [...project.tracks].sort((a, b) => b.order - a.order),
+    [project.tracks],
   )
+
+  const activeClips = useMemo(() => {
+    return sortedTracks.flatMap(track => {
+      const candidates = track.clips.filter(
+        clip =>
+          clip.timelineStart - CLIP_EPSILON <= playhead &&
+          playhead < clip.timelineEnd + CLIP_EPSILON,
+      )
+      if (candidates.length <= 1) return candidates
+      const maxStart = Math.max(...candidates.map(c => c.timelineStart))
+      return candidates.filter(c => c.timelineStart === maxStart)
+    })
+  }, [sortedTracks, playhead])
+
+  const staticElements = useMemo(
+    () => activeClips.filter(c => c.type === "image" || c.type === "text"),
+    [activeClips],
+  )
+
+  const trackOrderMap = useMemo(
+    () => new Map(project.tracks.map(t => [t.id, t.order])),
+    [project.tracks],
+  )
+  const maxOrder = useMemo(
+    () => Math.max(0, ...project.tracks.map(t => t.order)),
+    [project.tracks],
+  )
+  const zIndex = (trackId: string) => maxOrder - (trackOrderMap.get(trackId) ?? 0) + 1
+
+  const primaryVideoClip = useMemo(
+    () => getActiveVideoClip(project.tracks, playhead),
+    [project.tracks, playhead],
+  )
+
+  const secondaryVideoClips = useMemo(() => {
+    const primaryId = primaryVideoClip?.id
+    return activeClips.filter(
+      (c): c is VideoClip => c.type === "video" && c.id !== primaryId,
+    )
+  }, [activeClips, primaryVideoClip])
+
+  secondaryClipsRef.current = secondaryVideoClips
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     const rect = canvasContainerRef.current!.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-    const canvasX = mouseX / (rect.width / 1280)
-    const canvasY = mouseY / (rect.height / 720)
+    const canvasX = (e.clientX - rect.left) / (rect.width / 1280)
+    const canvasY = (e.clientY - rect.top) / (rect.height / 720)
 
     const hit = [...activeClips].reverse().find(clip => {
-      if (clip.type === 'audio') return false
+      if (clip.type === "audio") return false
       const t = clip.transform
       return canvasX >= t.x && canvasX <= t.x + t.width
           && canvasY >= t.y && canvasY <= t.y + t.height
     })
-
-    if (hit) {
-      setSelectedClip(hit.id)
-    } else {
-      setSelectedClip(undefined)
-    }
+    setSelectedClip(hit ? hit.id : undefined)
   }
 
   return (
     <div className="flex flex-col min-h-0 h-full w-full items-center justify-center">
-
-      {/* Canvas area — fills available height, maintains 16:9 */}
+      {/* Canvas area */}
       <div className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden">
         <div
           ref={canvasContainerRef}
           onClick={handleCanvasClick}
-          className="relative bg-black overflow-hidden cursor-default"
-          style={{ aspectRatio: "16 / 9", height: "100%", maxWidth: "100%", width: "auto" }}
+          style={{
+            position: "relative",
+            background: "#000000",
+            overflow: "hidden",
+            cursor: "default",
+            aspectRatio: "16 / 9",
+            height: "100%",
+            maxWidth: "100%",
+            width: "auto",
+            border: "1px solid var(--color-dark-border)",
+          }}
         >
-          {/* Inner canvas at 1280×720 scaled to container */}
           <div
+            ref={innerCanvasRef}
             style={{
               position: "absolute",
               width: 1280,
               height: 720,
-              transform: `scale(${canvasScale})`,
               transformOrigin: "0 0",
               pointerEvents: selectedClipId ? "none" : undefined,
             }}
           >
-            {activeClips.map(clip => {
-              if (clip.type === "video") {
-                const url = getPlaybackUrl(clip.mediaId)
-                return (
-                  <video
-                    key={clip.id}
-                    ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
-                    src={url}
-                    style={applyTransform(clip.transform)}
-                    muted={isMuted}
-                    playsInline
-                  />
-                )
-              }
+            <video
+              ref={videoRefA}
+              style={{ position: "absolute", opacity: 1, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0, filter: primaryVideoClip ? buildCssFilter(primaryVideoClip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) : undefined }}
+              preload="auto" playsInline disablePictureInPicture
+            />
+            <video
+              ref={videoRefB}
+              style={{ position: "absolute", opacity: 0, pointerEvents: "none", willChange: "transform", transform: "translateZ(0)", zIndex: primaryVideoClip ? zIndex(primaryVideoClip.trackId) : 0, filter: primaryVideoClip ? buildCssFilter(primaryVideoClip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS) : undefined }}
+              preload="auto" playsInline disablePictureInPicture
+            />
 
+            {secondaryVideoClips.map(clip => (
+              <video
+                key={clip.id}
+                ref={el => {
+                  if (el) {
+                    el.playbackRate = clip.speed ?? DEFAULT_SPEED
+                    secondaryVideoElemsRef.current.set(clip.id, el)
+                  }
+                  else secondaryVideoElemsRef.current.delete(clip.id)
+                }}
+                src={getPlaybackUrl(clip.mediaId)}
+                style={{ ...applyTransform(clip.transform), filter: buildCssFilter(clip.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS), zIndex: zIndex(clip.trackId), pointerEvents: "none" }}
+                muted
+                preload="auto"
+                playsInline
+                disablePictureInPicture
+              />
+            ))}
+
+            {staticElements.map(clip => {
               if (clip.type === "image") {
-                const url = getObjectUrl(clip.mediaId)
-                return (
-                  <img
-                    key={clip.id}
-                    src={url}
-                    style={applyTransform(clip.transform)}
-                    alt=""
-                  />
-                )
+                return <img key={clip.id} src={getObjectUrl(clip.mediaId)} style={{ ...applyTransform(clip.transform), filter: buildCssFilter((clip as ImageClip).colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS), zIndex: zIndex(clip.trackId) }} alt="" />
               }
-
               if (clip.type === "text") {
-                return (
-                  <div key={clip.id} style={applyTransform(clip.transform)}>
-                    {clip.content}
-                  </div>
-                )
+                return <div key={clip.id} style={{ ...applyTransform(clip.transform), zIndex: zIndex(clip.trackId) }}>{clip.content}</div>
               }
-
-              if (clip.type === "audio") {
-                const url = getObjectUrl(clip.mediaId)
-                return (
-                  // eslint-disable-next-line jsx-a11y/media-has-caption
-                  <audio
-                    key={clip.id}
-                    ref={el => { if (el) mediaRefsRef.current.set(clip.id, el) }}
-                    src={url}
-                  />
-                )
-              }
-
               return null
             })}
           </div>
@@ -270,70 +263,66 @@ export function PreviewPlayer() {
         </div>
       </div>
 
-      {/* Controls — fixed height row */}
-      <div className="w-full bg-dark-card border-t border-dark-border px-3 py-2 shrink-0">
-        {/* Seek bar */}
-        <RangeSlider
-          min={0}
-          max={duration || 1}
-          step={0.01}
-          value={playhead}
-          label="Seek"
-          onPointerDown={() => pause()}
-          onChange={seek}
-          className="mb-2"
+      {/* Transport bar */}
+      <div
+        className="w-full shrink-0 flex items-center"
+        style={{
+          height: 36,
+          background: "var(--color-dark)",
+          borderTop: "1px solid var(--color-dark-border)",
+          padding: "0 4px",
+          gap: 0,
+        }}
+      >
+        {/* Transport buttons */}
+        <TransportBtn icon={<SkipBack size={14} />} label="Skip to start" onClick={() => seek(0)} />
+        <TransportBtn icon={<Rewind size={14} />} label="Rewind 5s" onClick={() => seek(Math.max(0, playhead - 5))} />
+        <TransportBtn
+          icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          label={isPlaying ? "Pause" : "Play"}
+          onClick={() => (isPlaying ? pause() : play())}
+          primary
         />
+        <TransportBtn icon={<FastForward size={14} />} label="Forward 5s" onClick={() => seek(Math.min(duration, playhead + 5))} />
+        <TransportBtn icon={<SkipForward size={14} />} label="Skip to end" onClick={() => seek(duration)} />
 
-        {/* Buttons + timecode + volume */}
-        <div className="flex items-center gap-0.5 mt-1">
-          <IconButton
-            icon={<SkipBack />}
-            label="Skip to start"
-            size="sm"
-            onClick={() => seek(0)}
-          />
-          <IconButton
-            icon={<Rewind />}
-            label="Rewind 10s"
-            size="sm"
-            onClick={() => seek(Math.max(0, playhead - 10))}
-          />
-          <IconButton
-            icon={isPlaying ? <Pause /> : <Play />}
-            label={isPlaying ? "Pause" : "Play"}
-            size="lg"
-            variant="solid"
-            onClick={() => (isPlaying ? pause() : play())}
-          />
-          <IconButton
-            icon={<FastForward />}
-            label="Fast forward 10s"
-            size="sm"
-            onClick={() => seek(Math.min(duration, playhead + 10))}
-          />
-          <IconButton
-            icon={<SkipForward />}
-            label="Skip to end"
-            size="sm"
-            onClick={() => seek(duration)}
-          />
+        {/* Timecode */}
+        <div
+          style={{
+            fontFamily: "'Courier New', monospace",
+            fontSize: 12,
+            color: "var(--color-accent-white)",
+            padding: "0 10px",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            minWidth: 88,
+          }}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {formatTimecode(playhead)}
+        </div>
 
-          {/* Timecode */}
-          <span
-            className="flex-1 text-center font-mono text-xs text-muted tabular-nums"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            {formatTime(playhead)} / {formatTime(duration)}
-          </span>
-
-          {/* Volume */}
-          <IconButton
-            icon={isMuted ? <VolumeX /> : <Volume2 />}
-            label={isMuted ? "Unmute" : "Mute"}
-            size="sm"
-            onClick={() => setIsMuted(v => !v)}
+        {/* Scrubber */}
+        <div className="flex-1 flex items-center" style={{ padding: "0 8px" }}>
+          <RangeSlider
+            min={0}
+            max={duration || 1}
+            step={0.01}
+            value={playhead}
+            label="Seek"
+            onPointerDown={() => pause()}
+            onChange={seek}
           />
+        </div>
+
+        {/* Volume */}
+        <TransportBtn
+          icon={isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          label={isMuted ? "Unmute" : "Mute"}
+          onClick={() => setIsMuted(v => !v)}
+        />
+        <div style={{ width: 72, padding: "0 4px" }}>
           <RangeSlider
             min={0}
             max={100}
@@ -341,7 +330,6 @@ export function PreviewPlayer() {
             value={isMuted ? 0 : Math.round(volume * 100)}
             label="Volume"
             onChange={v => { setVolume(v / 100); setIsMuted(false) }}
-            className="w-20"
           />
         </div>
       </div>
