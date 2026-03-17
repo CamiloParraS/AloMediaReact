@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router";
 import { Plus, User, Home } from "lucide-react";
 import { useState } from "react";
-import ActionCard from "./ActionCard";
 import UserMenuModal from "./UserMenuModal";
 import { useAuth } from "../hooks/useAuth";
 
