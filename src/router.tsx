@@ -7,9 +7,10 @@ import RecoverRequestPage from "./pages/auth/RecoverRequestPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import PublicRoute from "./routes/PublicRoute";
 import PrivateRoute from "./routes/PrivateRoute";
+import VideoEditor from "./pages/editor/VideoEditor";
 
 const router = createBrowserRouter([
-  // ── Public-only routes (redirect to /dashboard if already logged in) ───────
+  // Public-only routes (redirect to /dashboard if already logged in)
   {
     element: <PublicRoute />,
     children: [
@@ -27,7 +28,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  // ── Private routes (redirect to /auth/login if not logged in) ────────────
+  // Private routes (redirect to /auth/login if not logged in)
   {
     element: <PrivateRoute />,
     children: [
@@ -38,11 +39,18 @@ const router = createBrowserRouter([
     ],
   },
 
-  // ── Fallback ──────────────────────────────────────────────────────────────
+  // testing routes 
+  {
+    path: "/editor",
+    element: <VideoEditor />,
+  },
+
+  // Fallback 
   {
     path: "*",
     element: <Navigate to="/auth/login" replace />,
   },
+
 ]);
 
 export default router;
