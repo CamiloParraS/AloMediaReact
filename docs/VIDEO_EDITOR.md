@@ -1,203 +1,218 @@
 # Video Editor Documentation
+# AloMedia — Video Editor Guide
 
 ## Overview
 
-The AloMedia video editor is the core feature of the application, providing professional-grade video composition and editing capabilities. It implements a non-destructive editing paradigm where multiple media clips (video, audio, images) are arranged on tracks in a timeline, transformed with effects, and combined into a final output file.
+The video editor is the core feature of AloMedia. It implements a **non-destructive, multi-track editing** workflow: source media files are never modified. Instead, `Clip` objects describe which portion of each file to use and where to place it on the timeline. The final output is assembled from these instructions during export.
 
-The editor consists of several interconnected systems that work together seamlessly:
-- **Timeline Management**: Organizing clips in multi-track layouts
-- **Media Library**: Importing and managing source media
-- **Preview Player**: Real-time rendering and playback
-- **Project State**: Central state container for all editor data
-- **Render Pipeline**: Converting the project to a final video file
+For a technical deep-dive into the editor's subsystems, see:
+- [DATA_MODEL.md](DATA_MODEL.md) — Project, Track, Clip types
+- [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md) — Zustand store and history
+- [PLAYER.md](PLAYER.md) — Real-time playback engine
+- [EDITOR_COMPONENTS.md](EDITOR_COMPONENTS.md) — Individual component documentation
+- [FFMPEG.md](FFMPEG.md) — Export and proxy engine
 
-## Core Concepts
+---
+
+## Editor Layout
+
+The editor fills the full browser viewport with a fixed layout:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                     Top Bar                         │
+│  [Project Title]     [Load] [Save] [Export] [Share] │
+├──────────────┬──────────────────┬───────────────────┤
+│              │                  │                   │
+│  Media       │  Preview Canvas  │  Inspector Panel  │
+│  Library     │                  │  (when clip       │
+│              │  ┌────────────┐  │   selected)       │
+│              │  │ transport  │  │                   │
+│              │  └────────────┘  │                   │
+├──────────────┴──────────────────┴───────────────────┤
+│                     Toolbar                         │
+├─────────────────────────────────────────────────────┤
+│                     Timeline                        │
+│  [ruler ──────────────────────────────────────────] │
+│  [Track 1 ██████████  ████   ]                      │
+│  [Track 2   ██████████████   ]                      │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Core Editing Concepts
 
 ### Projects and Media
 
-A **Project** is the container for all editing work. It stores:
-- Unique project ID and name
-- Array of media files that were imported
-- Array of tracks containing clips
-- Project is never automatically saved; explicit save is required
+A **Project** holds the media catalog (imported files) and the track/clip arrangement. It is explicitly saved by the user — there is no auto-save. Saving serializes the project to JSON; media files must be re-imported when loading a saved project, since binary file data is not included in the JSON.
 
-**Media** represents a single imported file (video, audio, or image). Each media entry tracks:
-- File metadata (name, format, size)
-- Duration (null for images)
-- Hash of the file content (used for deduplication)
-- The actual File object is stored in a module-level map, not in the media object itself
+Each imported file is represented as a **Media** entry with a content hash (SHA-256). If the same file is imported a second time, the duplicate is silently ignored.
 
-### Tracks and Clips
+### Tracks
 
-A **Track** is a horizontal lane in the timeline that contains clips. Tracks have:
-- Unique ID
-- Type: either "video" or "audio"
-- Order: determines z-axis stacking (lower order = more visible)
-- Array of clips
+Tracks are horizontal lanes on the timeline. Every project starts with one video track and one audio track. Tracks have an **order** number that determines visual compositing priority: a lower `order` value means the track's content is rendered in the **foreground** (higher z-index in the canvas).
 
-A **Clip** is a reference to media placed at a specific time on a track. There are four clip types:
+### Clips
 
-**VideoClip**: References a video file with:
-- Timeline position (start and end time on the track)
-- Media position (where in the source file to start/end playing)
-- Volume level
-- 2D transformation (position, scale, rotation)
+A clip is a time-boxed reference to a portion of a media file. The clip defines:
+- Where it sits on the timeline (`timelineStart`, `timelineEnd`)
+- Which part of the source file to play (`mediaStart`, `mediaEnd`)
+- Per-clip effects: transform, color grading, audio config, playback speed
 
-**AudioClip**: References an audio file with:
-- Timeline position
-- Media position
-- Volume level
-- No transformation (audio is not visual)
+Clip duration on the timeline can differ from the source media duration when speed is adjusted.
 
-**ImageClip**: References an image file with:
-- Timeline position
-- 2D transformation
-- Duration is controlled by timeline position
+### Time Values
 
-**TextClip**: Contains text content (reserved for future implementation)
+All time values are stored in **seconds** with precision clamped to integer milliseconds. This avoids floating-point drift when performing speed calculations. The `toMs()` / `toSeconds()` helpers enforce this throughout the codebase.
 
-Time throughout the system is stored in **seconds with integer millisecond precision** to avoid floating-point errors in synchronization. Use `toMs()` to convert to milliseconds and `toSeconds()` to convert back.
+---
 
-## Timeline Component
+## Media Library
 
-### Overview
+The left panel for importing and managing media files.
 
-The Timeline is the central UI component where users interact with clips. It displays:
-- Horizontal ruler showing time markers
-- Tracks with clips arranged chronologically
-- Playhead indicator showing current playback position
-- Drag-and-drop interface for adding and moving clips
+### Import Process
 
-### Ruler and Zoom
+1. Click **Add Media** to open a native file picker. Accepts video, audio, and image files (multiple selection supported).
+2. Each file is registered in the project's media catalog with its metadata (name, type, duration, size, content hash).
+3. For video files, a **360p proxy** is generated immediately in the background. The proxy is a compressed, audio-stripped copy used for smooth timeline scrubbing. A `proxy…` badge appears on the card during generation.
+4. Once processed, the media card appears in the library grid with a thumbnail (video frame, image preview, or waveform icon for audio).
 
-The timeline ruler shows time markers from 0 to project duration. The horizontal scale is measured in **pixels per second** (default 50px/s) and is controlled by:
+### Using Media
 
-- **Mouse wheel**: Scroll up to zoom out (see more time), scroll down to zoom in (see more detail)
-- **Zoom factor**: 0.9x when scrolling out, 1.1x when scrolling in
-- **Constraints**: Zoom scale should be restricted to reasonable bounds (e.g., 5-200 px/s)
+- **Double-click** a card to insert the clip at the current playhead position on the first compatible track with room at that time.
+- **Drag** a card onto any compatible track to place it at a specific time.
 
-The zoom level is stored in `editorStore.timelineScale` and affects how clips are rendered horizontally.
+---
 
-### Time Conversion
+## Timeline
 
-Converting between screen coordinates and timeline time:
+### Navigation
 
-```
-// Pixel position to timeline seconds
-timelineSeconds = pixelX / timelineScale
+- **Horizontal scroll**: Scroll the timeline area to pan through time.
+- **Zoom**: Hold `Ctrl` and scroll the mouse wheel. Zoom level is measured in pixels per second and is stored in the editor store as `timelineScale`.
+- **Seek**: Click or drag anywhere on the time ruler to move the playhead.
 
-// Timeline seconds to pixel position
-pixelX = timelineSeconds * timelineScale
-```
+### Adding Clips
 
-The `useTimeline()` hook provides:
-- `xToTime()`: Convert mouse X coordinate to timeline time
-- `pxToTime()`: Convert pixel distance to time duration
-- `timeToPx()`: Convert time duration to pixel distance
+Drag a media card from the library and drop it on a track. A **snap indicator** (vertical line) shows where the clip will land if it snaps to a neighboring clip edge. If the drop position collides with an existing clip, the system automatically relocates the clip to the nearest available position.
 
-### Drag and Drop
+### Moving Clips
 
-The timeline supports two drag patterns:
+Drag a clip horizontally to reposition it in time, or drag it onto a different track of the same type. The snap-to-neighbor behavior applies here as well.
 
-**Adding Media to Timeline**
-1. User drags a media card from the MediaLibrary over a track
-2. `handleMediaDrop()` receives the drop event
-3. X-coordinate is converted to timeline time
-4. `resolveDropPosition()` checks for collisions with existing clips
-5. If no collision, a new clip is created and added to the track
-6. MediaCardsupply metadata via drag data attributes
+### Resizing Clips
 
-**Moving Existing Clips**
-1. User drags a clip on the timeline
-2. `handleClipDrop()` receives the drop and clip ID
-3. Clip is moved to new position/track
-4. Timeline is updated and re-rendered
+Drag the **right edge** of a clip to extend or shorten its timeline duration. The source media range (`mediaStart`, `mediaEnd`) is unchanged — only `timelineEnd` is modified.
 
-Drop position resolution accounts for:
-- Grid snapping (optional feature for alignment)
-- Collision detection with existing clips
-- Track type compatibility (video clips only on video tracks)
-- Valid time range (cannot place clips in negative time)
+### Clip Context Menu (Right-Click)
 
-## Media Library Component
+| Action | Description |
+|---|---|
+| Split at Playhead | Divides the clip at the current playhead into two independent clips |
+| Copy | Copies the clip to the clipboard |
+| Delete | Removes the clip from the track |
+| Extract Audio | (Video clips only) Creates a linked AudioClip on a new audio track |
 
-### Overview
+### Track Controls
 
-The MediaLibrary is a panel where users import media files and browse previously imported media. It manages:
+Each track header (left side) has:
+- **Drag handle** for reordering tracks (changes compositing order)
+- **Visibility toggle** (eye icon)
+- **Lock toggle**
+- **Delete button** (only shown if removing the track would not leave fewer than one track of its type)
 
-- File selection and upload
-- Media processing and metadata extraction
-- Visual previews (thumbnails for images/videos)
-- Organization and search (future enhancement)
+The Toolbar provides **+ Video Track** and **+ Audio Track** buttons to add new tracks.
 
-### Media Import Process
+---
 
-When a user selects files:
+## Preview Player
 
-1. **File Input**: User clicks "Add Media" and selects files from their computer
-2. **Pending State**: Files are added to a pending list and shown as loading cards
-3. **Media Processing**:
-   - File is added to store via `addMedia(file)`
-   - Duration is extracted by creating a temporary media element (video/audio)
-   - Media object is created with a hash of the file content
-4. **Proxy Generation**: For video files only:
-   - `generateProxy()` creates a low-resolution version for preview
-   - Progress is tracked and shown to user
-   - Once ready, proxy URL is stored in `proxyMap`
-5. **Completion**: Pending item is removed, media appears in the gallery
+The center panel shows a real-time preview of the composition at the current playhead position.
 
-### Object URL Management
+**Canvas**: A 1280×720 logical canvas scaled to fit the panel. All active clips across all tracks are composited simultaneously — foreground tracks (lower `order`) appear on top.
 
-Since media files are File objects stored in memory, the MediaLibrary creates browser Object URLs (`URL.createObjectURL(file)`) to render previews. These URLs are:
+**Transport controls**:
+- Skip to start / Skip to end
+- Rewind 5 s / Forward 5 s
+- Play / Pause
+- Mute toggle + Volume slider
 
-- Created lazily on demand via `getObjectUrl(mediaId)`
-- Cached in a ref to avoid creating duplicates
-- Revoked when the component unmounts via `useEffect` cleanup
+**Clip selection**: Click anywhere in the preview canvas to select the topmost clip under the cursor. The selected clip is highlighted on the timeline and its properties appear in the Inspector panel.
 
-This cleanup is critical to prevent memory leaks—every created object URL must be revoked when no longer needed.
+**Transform overlay**: When a video or image clip is selected, an SVG overlay appears with move, resize, and rotate handles.
 
-### Preview Generation
+---
 
-Media cards show:
-- **Video files**: Thumbnail from proxy (if available) with play icon
-- **Audio files**: Generic audio waveform icon or metadata
-- **Images**: Thumbnail of the image
+## Inspector Panel
 
-If a proxy is generating, a loading skeleton is shown instead. If proxy generation fails, an error message is displayed.
+The right panel shows per-clip properties for the selected clip. It has up to three tabs:
 
-## Timeline (Track Organization)
+### Video Tab — Color Grading
 
-### Track Structure
+Available for video and image clips. Provides seven per-clip adjustments:
 
-Tracks are displayed vertically and show:
-- **Track header**: Contains track type icon and controls (delete, duplicate, etc.)
-- **Track body**: Contains clips arranged horizontally by time
-- **Drop zone**: Area where media can be dragged to create clips
+| Parameter | Effect |
+|---|---|
+| Brightness | Overall lightness / darkness |
+| Contrast | Difference between light and dark areas |
+| Saturation | Color intensity (0 = grayscale) |
+| Gamma | Mid-tone correction |
+| Exposure | Simulates camera exposure change |
+| Shadow | Lift or crush the shadow region |
+| Definition | Unsharp mask (micro-contrast / clarity) |
 
-Track order determines visual layering:
-- Order = 0 = Top (most visible)
-- Order = 1 = Below track 0
-- Order = N = Bottom
+Changes are visible **live** in the preview canvas as CSS filters. Gamma, shadow, and definition are approximated in the preview; the full adjustment accuracy is only reproduced in the final FFmpeg export.
 
-When playing back video, clips on lower-order tracks are visible; clips on higher-order tracks are behind them. This allows compositing multiple video layers.
+### Audio Tab — Audio Processing
 
-### Track Management
+Available for video and audio clips.
 
-**Adding Tracks**: `addTrack(type)` creates a new track with:
-- Unique ID
-- Specified type (video or audio)
-- Order automatically assigned (always lower than previous lowest)
-- Empty clips array
+| Control | Range | Notes |
+|---|---|---|
+| Mute | on/off | Completely silences the clip |
+| Volume | 0–200% | Values above 100% amplify via Web Audio GainNode |
+| Fade In | seconds | Ramps volume from silence at clip start |
+| Fade Out | seconds | Ramps volume to silence at clip end |
+| Balance | L to R | Stereo pan position |
 
-**Removing Tracks**: `removeTrack(trackId)` deletes the track and all clips within it. Consider warning user about data loss.
+### Speed Tab — Playback Speed
 
-**Reordering Tracks**: `reorderTrack(sourceId, targetId)` swaps the order of two tracks, changing the visual layering.
+Available for video and audio clips. A logarithmic slider from **0.1×** (10× slow-motion) to **5×** (5× fast-forward). The slider uses a log scale so slow-motion values have higher resolution than fast-forward values. The timeline `timelineEnd` of the clip is recalculated automatically when speed changes.
 
-### Track Rendering
+---
 
-The Track component (`src/components/editor/Track.tsx`) renders:
+## Undo / Redo
 
-1. **Track header**: Button controls and track info
+All destructive operations (add/remove/move clips, color changes, audio changes, speed changes) push a snapshot to the history stack. The stack holds up to 50 entries.
+
+- **Ctrl+Z** / Undo button — restores the previous project state
+- **Ctrl+Y** / Redo button — re-applies an undone action
+
+Note: Clipboard contents, proxy states, and playback position are not part of the history.
+
+---
+
+## Export
+
+Click **Export** in the top bar to render the full timeline to an MP4 file.
+
+The export process:
+1. `buildRenderJob()` converts the project to a flat list of `RenderSegment` objects (pure data, no React).
+2. `renderJob()` passes these segments to the FFmpeg WASM engine.
+3. FFmpeg writes all source files into its virtual filesystem, builds a filter graph (overlay compositing for multi-track, color/audio/speed filters per clip), and muxes the output to MP4.
+4. The browser downloads the resulting file.
+
+Export runs entirely in the browser. For complex multi-track projects with many color effects, it may take several minutes since WASM is slower than native FFmpeg. Single-track projects without re-encoding effects use stream-copy mode and are significantly faster.
+
+---
+
+## Save and Load
+
+**Save** serializes the current project to a JSON file (via `projectSerializer.ts`) and triggers a browser download. The JSON contains all track and clip metadata, including color and audio settings, but not the media binary files.
+
+**Load** reads a previously saved JSON file and restores the project state. After loading, the user must re-import the original media files for playback to work, since file data is not embedded in the save file.
 2. **Clips**: Each clip rendered with:
    - Correct timeline position (left = `timelineStart * timelineScale`)
    - Correct width (width = `(timelineEnd - timelineStart) * timelineScale`)

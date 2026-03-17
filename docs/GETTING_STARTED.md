@@ -1,44 +1,37 @@
 # Getting Started Guide
+# AloMedia — Getting Started
 
-## Welcome to AloMedia
+## What is AloMedia?
 
-AloMedia is a web-based video editing platform that allows users to compose, edit, and render professional-quality videos directly in their browser. This guide will help you get started with the project.
+AloMedia is a **browser-based, non-linear video editor**. It runs entirely in the browser with no server-side media processing. Users can import video, audio, and image files; arrange them on a multi-track timeline; apply per-clip color grading and audio effects; and export a final MP4 file — all without leaving their browser tab.
+
+---
 
 ## Prerequisites
 
-Before you begin, ensure you have:
+- **Node.js** 18+ (`node --version` to check)
+- **npm** 9+ (bundled with Node.js)
+- **A Chromium-based browser** (Chrome or Edge recommended). The WASM multi-threading model used by FFmpeg requires `SharedArrayBuffer`, which is available in all modern browsers on pages served with the correct security headers (configured automatically in the dev server).
 
-- **Node.js**: Version 18+ (check with `node --version`)
-- **npm**: Version 9+ (comes with Node.js)
-- **Git**: For version control (check with `git --version`)
-- **A modern web browser**: Chrome, Firefox, Safari, or Edge (latest versions)
-- **A code editor**: VS Code recommended (free)
+---
 
 ## Initial Setup
 
-### 1. Clone the Repository
-
-```bash
-git clone <repository-url>
-cd AloMedia
-```
-
-### 2. Install Dependencies
+### 1. Install Dependencies
 
 ```bash
 npm install
 ```
 
-This installs all project dependencies listed in `package.json`, including:
-- React 19 and related packages
-- Vite build tool
-- TailwindCSS for styling
-- FFmpeg.wasm for video processing
-- React Router for navigation
-- Zustand for state management
-- TypeScript and dev tools
+### 2. Configure Environment
 
-Installation typically takes 2-5 minutes depending on your internet speed.
+Create a `.env` file at the project root:
+
+```
+VITE_BASE_URL=http://localhost:8080
+```
+
+This points to the backend API used for authentication. The editor itself works without a backend — only the auth flow requires a live API.
 
 ### 3. Start the Development Server
 
@@ -46,157 +39,104 @@ Installation typically takes 2-5 minutes depending on your internet speed.
 npm run dev
 ```
 
-This starts the Vite development server with Hot Module Replacement (HMR):
+The Vite dev server starts at `http://localhost:5173`. It automatically sets the `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers required for FFmpeg WASM multi-threading.
 
-```
-VITE v7.3.1  ready in XXX ms
+### 4. Access the Editor Directly
 
-➜  Local:   http://localhost:5173/
-➜  Press h to show help
-```
+The video editor is accessible at `/editor` without authentication (it has no route guard in the current dev setup). To test without a backend, navigate directly to `http://localhost:5173/editor`.
 
-Open your browser to `http://localhost:5173/` to see the app running.
+---
 
-## Understanding the Project Structure
+## Available Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start dev server with HMR |
+| `npm run build` | TypeScript compile + Vite production bundle |
+| `npm run preview` | Serve the production build locally |
+| `npm run lint` | ESLint check (`--fix` to auto-correct) |
+
+---
+
+## Project Structure
 
 ```
 AloMedia/
 ├── src/
-│   ├── App.tsx              # Root component
-│   ├── main.tsx             # App entry point
-│   ├── router.tsx           # Route definitions
-│   ├── index.css            # Tailwind and theme
-│   ├── api/                 # HTTP client
-│   ├── components/          # React components
-│   ├── context/             # React context
-│   ├── engine/              # FFmpeg and rendering
-│   ├── player/              # Playback system
-│   ├── store/               # Zustand state
-│   ├── services/            # Backend API calls
-│   ├── utils/               # Utility functions
-│   ├── types/               # TypeScript types
-│   ├── constants/           # App constants
-│   ├── hooks/               # Custom React hooks
-│   ├── pages/               # Page components
-│   └── ...
+│   ├── api/            HTTP client + error types
+│   ├── components/     React UI components
+│   │   └── editor/     Editor-specific panels
+│   ├── constants/      Shared numeric constants
+│   ├── context/        AuthProvider (React Context)
+│   ├── engine/         FFmpeg render + proxy engines
+│   ├── hooks/          usePlayer, useTimeline, useAuth
+│   ├── layouts/        AuthLayout
+│   ├── pages/          Route-level page components
+│   ├── player/         Real-time playback subsystem
+│   ├── project/        Project types + serializer
+│   ├── routes/         PublicRoute / PrivateRoute guards
+│   ├── services/       authService
+│   ├── store/          Zustand editor store
+│   ├── types/          Shared TypeScript type definitions
+│   └── utils/          Pure utility functions
 ├── docs/                    # Documentation
-│   ├── ARCHITECTURE.md
-│   ├── ROUTES.md
-│   ├── AUTHENTICATION.md
-│   ├── VIDEO_EDITOR.md
-│   ├── FFMPEG.md
-│   ├── STYLES_UI.md
-│   ├── CONFIGURATION.md
-│   └── GETTING_STARTED.md   # This file
+│   ├── ARCHITECTURE.md      System overview and design decisions
+│   ├── DATA_MODEL.md        Project types (Track, Clip, Media, etc.)
+│   ├── STATE_MANAGEMENT.md  Zustand store and history system
+│   ├── PLAYER.md            Real-time playback engine
+│   ├── FFMPEG.md            Engine layer (render + proxy)
+│   ├── EDITOR_COMPONENTS.md All editor UI components
+│   ├── HOOKS_AND_UTILS.md   Custom hooks and utility functions
+│   ├── AUTHENTICATION.md    Auth system and session management
+│   ├── ROUTES.md            Routes, guards, and API layer
+│   ├── VIDEO_EDITOR.md      Editor user guide
+│   ├── STYLES_UI.md         Styling conventions
+│   └── CONFIGURATION.md     Environment and build configuration
 ├── public/                  # Static assets
 ├── package.json             # Dependencies and scripts
 ├── vite.config.ts           # Vite configuration
 ├── tsconfig.json            # TypeScript configuration
 ├── eslint.config.js         # Linting rules
 └── tsconfig.app.json        # App TypeScript config
+└── tsconfig.app.json        # App TypeScript config
 ```
 
-## Available Scripts
+---
 
-### Development
+## First Workflow: Editing a Video
 
-```bash
-npm run dev
+1. **Open the editor** — Navigate to `http://localhost:5173/editor`.
+2. **Import media** — Click "Add Media" in the left panel. Select one or more video, audio, or image files. Video files are immediately transcoded to a 360p proxy in the background for smooth playback.
+3. **Add clips to the timeline** — Drag a card from the media library onto a track, or double-click a card to insert it at the current playhead position.
+4. **Play the preview** — Use the transport controls below the preview canvas. The canvas composites all active clips across all tracks simultaneously.
+5. **Edit clips** — Drag clips to reposition them. Drag the right edge to resize. Right-click for split, copy, delete, or extract audio.
+6. **Adjust a clip** — Select a clip on the timeline, then use the Inspector panel (right side) to adjust color grading, audio levels, fades, or playback speed.
+7. **Export** — Click "Export" in the top bar. The FFmpeg engine renders the full timeline to an MP4 file, which the browser downloads automatically.
+
+---
+
+## Key Concepts to Understand First
+
+Before diving into the code, familiarize yourself with these documents in order:
+
+1. [ARCHITECTURE.md](ARCHITECTURE.md) — Three-layer system (UI, Player, Engine) and their interaction model.
+2. [DATA_MODEL.md](DATA_MODEL.md) — The Project/Track/Clip type tree that everything else builds on.
+3. [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md) — How the Zustand store works and the undo/redo system.
+4. [PLAYER.md](PLAYER.md) — The real-time playback engine (the most complex subsystem).
+5. [EDITOR_COMPONENTS.md](EDITOR_COMPONENTS.md) — What each UI component does.
+
+---
+
+## Production Deployment Notes
+
+Any web server hosting the production build must set these HTTP response headers:
+
 ```
-Starts the development server with hot reloading. Changes to files automatically refresh the browser.
-
-### Building
-
-```bash
-npm run build
-```
-Creates a production-ready build in the `dist/` folder. This includes:
-- TypeScript compilation
-- Code bundling and minification
-- Asset optimization
-
-### Linting
-
-```bash
-npm run lint
-```
-Checks code quality using ESLint. Add `--fix` to auto-fix issues:
-
-```bash
-npm run lint -- --fix
-```
-
-### Preview Production Build
-
-```bash
-npm run preview
-```
-Locally serves the production build to test it before deployment.
-
-## First Look at the Application
-
-### Authentication Pages
-
-When you start the dev server, you're redirected to `/auth/login`. Here you can:
-
-1. **Login**: If you have credentials from a backend instance
-2. **Register**: Create a new account
-3. **Recover**: Reset a forgotten password
-
-**Note**: These require a backend API running. For development without a backend, you may need to mock the authentication. See the [Authentication documentation](AUTHENTICATION.md) for details.
-
-### Dashboard
-
-After logging in (or if backend is mocked), you see the Dashboard at `/dashboard`:
-
-- Displays user's projects
-- Options to create new projects
-- Links to existing projects
-
-**Current Status**: Dashboard UI structure is in place but may not be fully functional depending on backend implementation.
-
-### Video Editor
-
-Access the editor at `/editor` (this is currently unprotected for development):
-
-- **Timeline**: Shows tracks and clips
-- **Media Library**: Upload and browse media
-- **Preview Player**: Real-time preview of video composition
-- **Toolbar**: Playback controls and settings
-
-Try these actions:
-
-1. **Add Media**: Click "Add Media" button to import a video, audio, or image file
-2. **Drag to Timeline**: Drag the media to a track to create a clip
-3. **Play**: Click play button to preview
-4. **Move Clip**: Drag clips on the timeline to different positions
-5. **Zoom Timeline**: Use mouse wheel to zoom in/out
-
-## Development Workflow
-
-### Editing Code
-
-1. Open any file in `src/`
-2. Make changes
-3. Browser automatically refreshes (HMR)
-4. See your changes instantly
-
-### TypeScript Support
-
-The project uses TypeScript for type safety:
-
-```typescript
-// Good: Properly typed
-function handleClick(event: React.MouseEvent<HTMLButtonElement>) {
-  console.log(event.currentTarget)
-}
-
-// Will show error if types don't match
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
 ```
 
-Use your editor's intellisense to see available properties and methods.
-
-### React Component Development
+Without them, `SharedArrayBuffer` is blocked by the browser and the FFmpeg WASM engine fails to initialize. These are configured automatically in the Vite dev server via `vite.config.ts`, but must be manually configured in Nginx, Caddy, or whatever serves the production build.
 
 Example of creating a new component:
 

@@ -1,63 +1,139 @@
 # FFmpeg Integration & Video Rendering
+# AloMedia — Engine Layer
 
-## Overview
+The engine layer is responsible for all heavy media processing: background proxy transcoding and final MP4 export. Both tasks run entirely in the browser using **FFmpeg.wasm** — a port of the FFmpeg multimedia framework compiled to WebAssembly — with no server involvement.
 
-AloMedia uses **FFmpeg.wasm**, a JavaScript port of FFmpeg compiled to WebAssembly, to perform server-less video rendering directly in the browser. This eliminates the need for a backend rendering service and enables users to create videos without uploading their media to external servers.
+---
 
-The FFmpeg integration is abstracted into a render pipeline that converts a project definition into a final video file. This documentation covers how the system works, the rendering process, and important considerations.
+## Why In-Browser FFmpeg?
 
-## What is FFmpeg.wasm?
+Running FFmpeg in the browser means:
 
-FFmpeg.wasm is a port of the FFmpeg multimedia framework compiled to WebAssembly (WASM). It provides:
+- Media files never leave the user's device during editing.
+- No backend infrastructure is required for encoding.
+- The full FFmpeg filter graph (color correction, audio processing, multi-track overlay) is available without custom backend code.
 
-- **Video encoding/decoding**: Read and write various video formats
-- **Audio processing**: Encode/decode audio and create soundtracks
-- **Filtering**: Apply transformations, effects, and compositions
-- **Muxing**: Combine video and audio streams into containers
+The tradeoff is that encoding is slower than a native server-side process, and the WASM binary is large (~30 MB). The proxy engine mitigates the interactive slowness by providing low-resolution preview files immediately after import.
 
-The JavaScript API allows calling FFmpeg commands as if using the CLI, but all computation happens in the browser's JavaScript sandbox.
+**SharedArrayBuffer requirement**: FFmpeg's multi-threaded WASM core relies on `SharedArrayBuffer`, which browsers restrict to cross-origin isolated pages. The Vite dev server and any production deployment must serve responses with:
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: require-corp`
 
-## Architecture
+These are configured in `vite.config.ts`.
 
-### FFmpeg Engine (`src/engine/ffmpegEngine.ts`)
+---
 
-The primary interface for video rendering:
+## Render Pipeline — Data Transformation
 
-```
-loadFFmpeg() → Promise<void>
-renderJob(job: RenderJob, files: Map<string, File>) → Promise<Uint8Array>
-```
+**Location**: `src/engine/renderPipeline.ts`
 
-**`loadFFmpeg()`**: Initializes the FFmpeg library on first use:
+Before any FFmpeg call happens, the project state must be converted into a flat, serializable description of what to encode. This is the responsibility of `buildRenderJob()`.
 
-1. Fetches the FFmpeg core JavaScript from a CDN
-2. Fetches the WASM binary
-3. Initializes FFmpeg with multi-threading support
-4. Subsequent calls return immediately if already loaded
+`buildRenderJob(project, outputFormat, resolution, fps)` iterates every clip on every track and converts it into a `RenderSegment` — a plain object describing the clip's source media, time range, speed, transform, color adjustments, audio config, and track order. All segments are sorted by `timelineStart`.
 
-The FFmpeg core is fetched from a CDN (`unpkg.com`) to:
-- Serve WASM with correct MIME type (`application/wasm`)
-- Serve JavaScript with correct headers
-- Avoid issues with local development servers
+The result is a `RenderJob`:
 
-The Vite development server is configured to include COOP/COEP headers so SharedArrayBuffer can be used for FFmpeg's multi-threading.
+| Field | Description |
+|---|---|
+| `segments` | Flat array of all `RenderSegment` objects |
+| `outputFormat` | Container format (e.g. `"mp4"`) |
+| `resolution` | Output dimensions |
+| `fps` | Output frame rate |
 
-**`renderJob()`**: Transforms a project into a video file:
+This separation ensures that `ffmpegEngine` is a pure data consumer — it does not know about Zustand or React, only about `RenderJob` and raw `File` objects.
 
-1. Writes all media files into FFmpeg's virtual filesystem
-2. Processes video and audio segments separately
-3. Handles single-track, multi-track, and mixed scenarios
-4. Applies transformations and volume levels
-5. Muxes final video and audio
-6. Returns the output as binary data
+---
 
-### Render Job and Segments
+## FFmpeg Engine — Final Export
 
-A **RenderJob** describes what needs to be rendered:
+**Location**: `src/engine/ffmpegEngine.ts`
 
-```typescript
-{
-  segments: RenderSegment[],     // List of all clips
+A single shared `FFmpeg` instance handles all export operations. It is lazy-loaded the first time `loadFFmpeg()` is called.
+
+### Loading
+
+`loadFFmpeg()` fetches the FFmpeg core JavaScript and WASM binary from the `unpkg.com` CDN. The CDN is used rather than a local asset because it serves WASM files with the correct `application/wasm` MIME type and CORS headers that the browser requires. Once loaded, subsequent calls are no-ops.
+
+### Rendering
+
+`renderJob(job, files)` is the main export function. It writes all referenced media files into FFmpeg's virtual in-memory filesystem, then builds and executes an FFmpeg command. The output MP4 is read back as a `Uint8Array` and returned to the caller (the `VideoEditor` page), which triggers a browser download.
+
+The command structure varies by complexity:
+
+**Single-track, no effects**: Uses `concat` demuxer with `-c copy` stream copy. No re-encoding; very fast.
+
+**Single-track with effects**: Applies per-clip filters (`eq`, `curves`, `unsharp` for color; `setpts`/`atempo` for speed; `volume`/`afade`/`pan` for audio) and concatenates.
+
+**Multi-track**: Builds a `filtergraph` using FFmpeg's `overlay` filter chain:
+1. A black canvas is created as the base layer using `lavfi color=`.
+2. Each video segment is offset to its `timelineStart` with `-itsoffset`.
+3. Clips are scaled according to their `Transform` dimensions.
+4. Color filters are chained per-clip.
+5. `overlay` filters compose segments in track-order (highest `trackOrder` = background; lowest = foreground).
+6. Audio is mixed separately and combined with the final video stream.
+
+---
+
+## Proxy Engine — Background Transcoding
+
+**Location**: `src/engine/proxyEngine.ts`
+
+A **separate FFmpeg instance** is dedicated exclusively to proxy generation. This isolation prevents proxy jobs from blocking or interfering with the render instance.
+
+### Why Proxies?
+
+Full-resolution video files (especially 4K or high-bitrate footage) are expensive for the browser to seek through. Scrubbing on the timeline requires fast seeks to arbitrary positions, which is impractical with large source files.
+
+The proxy engine solves this by immediately transcoding every imported video to a **640×360, CRF 28, audio-stripped** copy. The player uses this proxy file for all preview playback and scrubbing. The original file is only read by the FFmpeg engine during final export.
+
+### Serialized Queue
+
+Because two FFmpeg instances cannot safely run concurrently (memory constraints), the proxy engine serializes all jobs through a promise queue (`proxyQueue`). If the user imports three files simultaneously, the proxies are generated one at a time in import order.
+
+### Lifecycle
+
+1. `generateProxy(mediaId, file, onReady, onError)` is called by `MediaLibrary` immediately after a video file is imported.
+2. The job is added to the queue.
+3. When it runs, FFmpeg transcodes the file and writes the output to its virtual FS.
+4. The result is read out, a `Blob` is created, and `URL.createObjectURL` produces a playable URL.
+5. `onReady(url)` is called, which triggers `setProxyReady` on the store.
+6. The player's `ObjectUrlRegistry` picks up the new proxy URL on the next frame.
+7. Temp files are deleted from the virtual FS after each job.
+
+---
+
+## Filter Utility Functions
+
+Filter strings for both the FFmpeg engine and the CSS preview are built by pure utility functions in `src/utils/`. These functions take the parameters from `ColorAdjustments` and `AudioConfig` objects and return FFmpeg filter expressions or CSS filter strings.
+
+### Color Filters (`colorAdjustmentFilters.ts`)
+
+| Function | Output |
+|---|---|
+| `buildEqFilter` | `eq=brightness:...:contrast:...:saturation:...:gamma:...` |
+| `buildShadowFilter` | `curves=all='...'` (custom tone curve) |
+| `buildDefinitionFilter` | `unsharp=...` (clarity/micro-contrast) |
+| `buildCssFilter` | CSS `brightness() contrast() saturate()` — for live preview only |
+
+Note: Gamma, shadow, and definition have no CSS equivalents. The live preview shows an approximation using only brightness, contrast, and saturation. The full range of adjustments is only accurate in the final FFmpeg export.
+
+### Audio Filters (`audioFilters.ts`)
+
+| Function | Output |
+|---|---|
+| `buildVolumeFilter` | `volume=X` or `volume=0` when muted |
+| `buildFadeFilter` | `afade=t=in:...` and/or `afade=t=out:...` |
+| `buildBalanceFilter` | `pan=stereo\|c0=...\|c1=...` with linear pan weights |
+| `buildFullAudioFilterChain` | All of the above joined with `,` |
+
+### Speed Filters (`speedFilters.ts`)
+
+| Function | Output |
+|---|---|
+| `buildVideoSpeedFilter` | `setpts=(1/speed)*PTS` |
+| `buildAudioSpeedFilter` | One or more chained `atempo=` filters |
+
+The `atempo` filter has a hard FFmpeg limit of `[0.5, 2.0]`. Speeds outside this range are decomposed into multiple stages (e.g. 4× becomes `atempo=2.0,atempo=2.0`).
   outputFormat: "mp4" | "webm",  // Final container
   resolution: { width, height }, // Output dimensions
   fps: number                     // Frames per second

@@ -1,83 +1,117 @@
 # AloMedia Architecture
 
+# AloMedia — Architecture
+
 ## Overview
 
-AloMedia is a modern web-based video editing application built with React and TypeScript. It provides users with professional video composition and editing capabilities, including multi-track timeline management, real-time preview, and FFmpeg-based rendering.
+AloMedia is a browser-based, non-linear video editor built entirely on web technologies. It requires no backend for media processing: all timeline editing, preview playback, and final MP4 export happen inside the browser tab using WebAssembly.
 
-## Core Technology Stack
+The system is structured around three largely independent concerns that communicate through a single Zustand store:
 
-**Frontend Framework**: React 19 with TypeScript
-**Routing**: React Router 7
-**State Management**: Zustand
-**Video Processing**: FFmpeg.wasm
-**Styling**: TailwindCSS with custom theming
-**Build Tool**: Vite
-**Package Manager**: npm
+- **User Interface** — React components responsible for rendering and user interaction.
+- **Player Layer** — Real-time, frame-accurate playback engine running outside React via `requestAnimationFrame`.
+- **Engine Layer** — WASM-based FFmpeg processing for proxy generation and final video export.
 
-## High-Level Architecture
+---
 
-AloMedia follows a layered architecture pattern with clear separation of concerns:
+## Technology Stack
+
+| Concern | Technology |
+|---|---|
+| Framework | React 19 + TypeScript 5 |
+| Build tool | Vite 7 |
+| Styling | Tailwind CSS v4 (Vite plugin) |
+| State management | Zustand v5 |
+| Routing | React Router v7 |
+| Server state | TanStack React Query v5 |
+| Media encoding | `@ffmpeg/ffmpeg` + `@ffmpeg/core` (WASM) |
+
+**Browser requirements**: The WASM multi-threading model of FFmpeg depends on `SharedArrayBuffer`, which modern browsers only expose on pages served with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. These headers are set in the Vite dev server config and must be replicated in any production deployment.
+
+---
+
+## Layered Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              User Interface Layer                     │
-│  (React Components, Pages, Editor UI)                │
-├─────────────────────────────────────────────────────┤
-│          State Management & Context Layer            │
-│  (Zustand Store, Auth Context, Hooks)               │
-├─────────────────────────────────────────────────────┤
-│           Business Logic & Services Layer            │
-│  (Timeline Management, Media Processing)            │
-├─────────────────────────────────────────────────────┤
-│        Engine & Processing Layer                     │
-│  (FFmpeg Engine, Proxy Engine, Render Pipeline)    │
-├─────────────────────────────────────────────────────┤
-│           API & External Integration Layer          │
-│  (HTTP Client, Authentication API)                  │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                   UI Layer (React)                        │
+│  Pages, Editor Layout, Timeline, Inspector, MediaLib     │
+├──────────────────────────────────────────────────────────┤
+│             State Layer (Zustand Store)                   │
+│  Project, Playhead, History, ProxyMap, FileMap           │
+├────────────────────────┬─────────────────────────────────┤
+│   Player Layer (RAF)   │      Engine Layer (WASM)        │
+│  VideoBufferManager    │  ffmpegEngine (final render)    │
+│  AudioPool + AudioSync │  proxyEngine (360p proxy)       │
+│  ClipIndex + Resolver  │  renderPipeline (job builder)   │
+└────────────────────────┴─────────────────────────────────┘
+		 ▲                          ▲
+		 │ reads fileMap            │ reads fileMap
+		 └──────────────────────────┘
+				  API Layer (fetch)
+			  http.ts + authService.ts
 ```
 
-## Directory Structure Explanation
+### Interaction Model
 
-### `/src` Root Files
-- **`main.tsx`**: Application entry point that mounts the React app
-- **`App.tsx`**: Root component that wraps the router provider
-- **`router.tsx`**: Route definitions for public (auth), private (dashboard/editor), and fallback routes
+1. **UI → Store**: All user actions (add media, move clip, seek playhead, update color) are dispatched as store actions. The store is the single source of truth.
+2. **Store → Player**: The Player layer reads project state and playhead from the store on every animation frame. It does not subscribe to reactive updates for performance reasons — it polls via module-level refs.
+3. **Store → Engine**: When the user triggers a render or a file is imported, the UI calls engine functions directly, passing the current store state (project) and `fileMap` as arguments.
+4. **Engine → Store**: The proxy engine writes back to the store via `setProxyReady` / `setProxyError` when a proxy URL becomes available.
 
-### `/src/api`
-Handles all HTTP communication with the backend and error handling.
+---
 
-- **`http.ts`**: Generic HTTP client that wraps the Fetch API with automatic JSON parsing, error handling, and type safety
-- **`errors.ts`**: Custom error classes and error handling utilities
+## Directory Structure
 
-### `/src/context`
-React Context providers for cross-cutting concerns that need to be accessible throughout the app.
+```
+src/
+├── api/              HTTP client and error types
+├── components/       Reusable UI components
+│   └── editor/       Video editor-specific components
+├── constants/        Shared numeric/config constants
+├── context/          React Context providers (Auth)
+├── engine/           FFmpeg render & proxy engines
+├── hooks/            Custom React hooks
+├── layouts/          Page layout wrappers
+├── pages/            Top-level route views
+├── player/           Real-time playback subsystem
+│   ├── audio/        AudioPool and AudioSync
+│   ├── hooks/        useMediaSync
+│   ├── render/       Canvas scaling and transform utils
+│   ├── timeline/     ClipIndex and active-clip resolver
+│   ├── utils/        ObjectUrlRegistry
+│   └── video/        VideoBufferManager (double-buffer)
+├── project/          Project types and serializer
+├── routes/           Route guard components
+├── services/         API service wrappers
+├── store/            Zustand editor store
+├── types/            Shared TypeScript types
+└── utils/            Pure utility functions
+```
 
-- **`AuthProvider.tsx`**: Provides authentication state (user data, login/logout methods) to the entire application. Manages session verification on app load through httpOnly cookies.
+---
 
-### `/src/store`
-Zustand stores for reactive state management, primarily for the video editor.
+## Key Design Decisions
 
-- **`editorStore.ts`**: Central state container for the video editor including project data, playhead position, timeline scale, selected elements, and undo/redo history. Also maintains a module-level file registry.
+### Non-reactive Playback Loop
 
-### `/src/services`
-Business logic services that interact with the backend API.
+The RAF playback loop in `usePlayer` moves the playhead via a **module-level ref** (`playheadRef`) rather than Zustand state. This avoids triggering a React re-render on every animation frame (60 times per second), which would be prohibitive for layout and rendering performance. The store's `playhead` value is only synced every 100 ms for timeline scrubber updates.
 
-- **`authService.ts`**: Authentication-related service functions (login, register, password recovery, logout)
+### Double-buffered Video
 
-### `/src/pages`
-Top-level page components that represent distinct application views.
+The primary video track uses two `<video>` elements alternating roles as "active" and "buffering". When a clip transition is 1.5 seconds away, the next clip is silently preloaded into the background element. On transition, the elements swap opacity. This eliminates visible frame gaps between clips.
 
-- **Auth Pages** (`/auth`): Login, registration, and password recovery flows
-- **Dashboard** (`/dashboard`): Main user hub showing projects and media
-- **Editor** (`/editor`): The video editing interface
+### Integer Millisecond Time
 
-### `/src/layouts`
-Reusable layout components that wrap page content.
+All timeline time values are stored as floating-point seconds but normalized to **integer millisecond precision** via `toMs()` / `toSeconds()` helpers. This prevents the subtle drift that accumulates when performing arithmetic on continuous floating-point timestamps (e.g. dividing clip duration by speed repeatedly).
 
-- **`AuthLayout.tsx`**: Layout wrapper for authentication pages
+### Immutable History via Deep Clone
 
-### `/src/routes`
+Undo/redo history is implemented by storing deep-clones of the entire `project` object using `JSON.parse(JSON.stringify(...))`. This is simple and robust for the data sizes involved (no binary data is stored in `project` — media files live in `fileMap` outside the serializable state).
+
+### Proxy URLs for Smooth Scrubbing
+
+Imported video files are immediately transcoded in the background to a 360p, audio-free proxy file. The player uses the proxy URL for `<video>` elements during timeline scrubbing, keeping seeks fast. The full-resolution file is only loaded when needed for final export.
 Route protection components using React Router's outlet pattern.
 
 - **`PrivateRoute.tsx`**: Redirects unauthenticated users to login
