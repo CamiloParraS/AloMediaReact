@@ -42,9 +42,9 @@ export function useExport(): UseExportReturn {
 
       const output = await runExport(ffmpeg, job, fileMap, setProgress, controller.signal)
 
-      // Trigger browser download
       const mimeType = options.outputFormat === 'webm' ? 'video/webm' : 'video/mp4'
-      const blob = new Blob([output], { type: mimeType })
+      const safeData = new Uint8Array(output)
+      const blob = new Blob([safeData], { type: mimeType })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

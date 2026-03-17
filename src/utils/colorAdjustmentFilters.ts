@@ -1,7 +1,7 @@
 import type { ColorAdjustments } from "../project/projectTypes"
 import { DEFAULT_COLOR_ADJUSTMENTS } from "../constants/colorAdjustments"
 
-// ── Per-parameter curve functions ────────────────────────────────────────────
+// Per-parameter curve functions 
 // Each function maps a raw user slider value to the effective adjustment value.
 // All filter math lives here — components never compute curves directly.
 
@@ -42,7 +42,7 @@ export function applyDefinitionCurve(v: number): number {
   return v
 }
 
-// ── FFmpeg filter builders ───────────────────────────────────────────────────
+// FFmpeg filter builders 
 
 /**
  * Builds an FFmpeg `eq` filter string for brightness, contrast, saturation, gamma,

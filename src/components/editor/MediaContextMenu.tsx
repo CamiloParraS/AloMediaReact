@@ -76,9 +76,8 @@ export function MediaContextMenu({ mediaId, x, y, onClose, onInsertAtPlayhead }:
     <div
       ref={menuRef}
       role="menu"
-      style={{ left: clampedX, top: clampedY, width: menuWidth }}
-      className="fixed z-[9999] border border-dark-border bg-dark-elevated py-1 context-menu-enter"
-      style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}
+      style={{ left: clampedX, top: clampedY, width: menuWidth, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}
+      className="fixed z-9999 border border-dark-border bg-dark-elevated py-1 context-menu-enter"
     >
       {!confirmDelete ? (
         <>

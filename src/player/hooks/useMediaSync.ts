@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from "react"
-import type { MutableRefObject } from "react"
 import type { AudioClip, VideoClip } from "../../project/projectTypes"
 import { useEditorStore } from "../../store/editorStore"
 import { isPlayingRef } from "../../hooks/usePlayer"
@@ -10,18 +9,17 @@ import { VideoBufferManager } from "../video/videoBuffer"
 import { ObjectUrlRegistry } from "../utils/objectUrlRegistry"
 import { syncAudioElements } from "../audio/audioSync"
 import { syncAudioPool, destroyAudioPool } from "../audio/audioPool"
-import { CLIP_EPSILON } from "../../utils/time"
-import { DRIFT_CORRECTION_THRESHOLD_S } from "../../constants/timeline"
+import { syncSecondaryVideoTracks } from "../video/secondaryVideoSync"
 import { DEFAULT_SPEED } from "../../constants/speed"
 
 interface UseMediaSyncParams {
-  onFrameRef: MutableRefObject<((ph: number) => void) | null>
-  seekFlagResetRef: MutableRefObject<(() => void) | null>
+  onFrameRef: { current: ((ph: number) => void) | null }
+  seekFlagResetRef: { current: (() => void) | null }
   playheadRef: { current: number }
   isMuted: boolean
   volume: number
-  secondaryVideoElemsRef: MutableRefObject<Map<string, HTMLVideoElement>>
-  secondaryClipsRef: MutableRefObject<VideoClip[]>
+  secondaryVideoElemsRef: { current: Map<string, HTMLVideoElement> }
+  secondaryClipsRef: { current: VideoClip[] }
 }
 
 /**
@@ -43,7 +41,6 @@ export function useMediaSync({
   const proxyMap = useEditorStore(s => s.proxyMap)
   const tracks = project.tracks
 
-
   const videoRefA = useRef<HTMLVideoElement>(null)
   const videoRefB = useRef<HTMLVideoElement>(null)
   const registryRef = useRef(new ObjectUrlRegistry())
@@ -55,7 +52,6 @@ export function useMediaSync({
   const isMutedRef = useRef(isMuted)
   const volumeRef = useRef(volume)
 
-
   useEffect(() => { clipIndexRef.current = buildClipIndex(tracks) }, [tracks])
   useEffect(() => { proxyMapRef.current = proxyMap }, [proxyMap])
   useEffect(() => { isMutedRef.current = isMuted }, [isMuted])
@@ -65,8 +61,6 @@ export function useMediaSync({
     seekFlagResetRef.current = () => managerRef.current?.resetSeekFlags()
     return () => { seekFlagResetRef.current = null }
   }, [seekFlagResetRef])
-
-  // Video buffer manager init
 
   useEffect(() => {
     const elA = videoRefA.current
@@ -84,13 +78,10 @@ export function useMediaSync({
     return () => { managerRef.current = null }
   }, [])
 
-  // Volume / mute sync 
   // Primary video buffer elements are always muted — audio is driven exclusively
   // through the audio element pool so every track's audio is handled uniformly.
-
   useEffect(() => { managerRef.current?.setVolume(isMuted, volume) }, [isMuted, volume])
 
-  // Apply volume/mute changes to all active audio pool elements immediately
   useEffect(() => {
     for (const [, el] of audioElementsRef.current) {
       if (!el.paused) {
@@ -100,9 +91,7 @@ export function useMediaSync({
     }
   }, [isMuted, volume])
 
-  //Audio element pool 
   // Pool covers ALL tracks (video + audio) so VideoClip audio is not lost.
-
   const allTrackIds = useMemo(
     () => tracks.map(t => t.id),
     [tracks],
@@ -110,8 +99,6 @@ export function useMediaSync({
 
   useEffect(() => { syncAudioPool(audioElementsRef.current, allTrackIds) }, [allTrackIds])
   useEffect(() => () => { destroyAudioPool(audioElementsRef.current) }, [])
-
-  //Per-frame sync (RAF callback)
 
   function syncMediaElements(ph: number): void {
     const p = useEditorStore.getState().project
@@ -123,35 +110,12 @@ export function useMediaSync({
 
     managerRef.current?.syncVideo(ph, p.tracks, getUrl, getIsPlaying)
 
-    // Sync secondary (non-primary) video elements
-    const playing = isPlayingRef.current
-    for (const clip of secondaryClipsRef.current) {
-      const el = secondaryVideoElemsRef.current.get(clip.id)
-      if (!el) continue
-      const inRange =
-        clip.timelineStart - CLIP_EPSILON <= ph &&
-        ph < clip.timelineEnd + CLIP_EPSILON
-      if (!inRange) {
-        el.pause()
-        continue
-      }
-      const clipSpeed = clip.speed ?? DEFAULT_SPEED
-      el.playbackRate = clipSpeed
-      const mediaTime = clip.mediaStart + (ph - clip.timelineStart) * clipSpeed
-      if (playing) {
-        if (el.paused) {
-          el.currentTime = Math.max(clip.mediaStart, mediaTime)
-          el.play().catch(() => {})
-        } else {
-          const drift = Math.abs(el.currentTime - mediaTime)
-          if (drift > DRIFT_CORRECTION_THRESHOLD_S) {
-            el.currentTime = mediaTime
-          }
-        }
-      } else {
-        el.currentTime = Math.max(clip.mediaStart, mediaTime)
-      }
-    }
+    syncSecondaryVideoTracks({
+      clips: secondaryClipsRef.current,
+      elements: secondaryVideoElemsRef.current,
+      playhead: ph,
+      isPlaying: isPlayingRef.current,
+    })
 
     prevActiveAudioIdsRef.current = syncAudioElements(
       ph,
@@ -170,14 +134,10 @@ export function useMediaSync({
     return () => { onFrameRef.current = null }
   }, [])
 
-  //Scrub sync (not playing) 
-
   useEffect(() => {
     if (isPlayingRef.current) return
     syncMediaElements(playhead)
   }, [playhead])
-
-  //Play / pause toggle
 
   useEffect(() => {
     if (isPlaying) {
@@ -186,7 +146,6 @@ export function useMediaSync({
       managerRef.current?.pauseActive()
     }
 
-    // Pause/resume secondary video elements
     for (const [, el] of secondaryVideoElemsRef.current) {
       if (isPlaying) {
         el.play().catch(() => {})
@@ -213,11 +172,7 @@ export function useMediaSync({
     }
   }, [isPlaying])
 
-  //URL cleanup 
-
   useEffect(() => () => { registryRef.current.revokeAll() }, [])
-
-  //Public API 
 
   const getObjectUrl = (mediaId: string) => registryRef.current.getObjectUrl(mediaId)
   const getPlaybackUrl = (mediaId: string) =>

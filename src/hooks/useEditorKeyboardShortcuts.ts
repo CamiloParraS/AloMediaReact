@@ -6,6 +6,9 @@ import {
   MIN_PIXELS_PER_SECOND,
   MAX_PIXELS_PER_SECOND,
   TIMELINE_ZOOM,
+  ZOOM_HOLD_DELAY_MS,
+  ZOOM_HOLD_INTERVAL_MS,
+  FRAME_STEP_SECONDS,
 } from "../constants/timeline"
 
 /** Returns true when the event target is a text-entry element — shortcuts should not fire. */
@@ -15,6 +18,13 @@ function isTypingTarget(target: EventTarget | null): boolean {
   if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true
   if (el.isContentEditable) return true
   return false
+}
+
+function getShortcutKey(e: KeyboardEvent): string {
+  const modifiers: string[] = []
+  if (e.ctrlKey || e.metaKey) modifiers.push('ctrl')
+  if (e.shiftKey) modifiers.push('shift')
+  return modifiers.length > 0 ? `${modifiers.join('+')}+${e.key}` : e.key
 }
 
 // Hold-to-zoom refs — stored at module level so the keyup handler can clear them
@@ -44,7 +54,6 @@ export function useEditorKeyboardShortcuts() {
 
   const { play, pause, seek } = usePlayer()
 
-  // Use refs for values needed inside event handlers to avoid stale closures
   const storeRef = useRef(useEditorStore.getState)
 
   useEffect(() => {
@@ -65,128 +74,74 @@ export function useEditorKeyboardShortcuts() {
     function startZoomIn() {
       applyZoomIn()
       zoomInTimeoutRef.current = setTimeout(() => {
-        zoomInIntervalRef.current = setInterval(applyZoomIn, 80)
-      }, 400)
+        zoomInIntervalRef.current = setInterval(applyZoomIn, ZOOM_HOLD_INTERVAL_MS)
+      }, ZOOM_HOLD_DELAY_MS)
     }
 
     function startZoomOut() {
       applyZoomOut()
       zoomOutTimeoutRef.current = setTimeout(() => {
-        zoomOutIntervalRef.current = setInterval(applyZoomOut, 80)
-      }, 400)
+        zoomOutIntervalRef.current = setInterval(applyZoomOut, ZOOM_HOLD_INTERVAL_MS)
+      }, ZOOM_HOLD_DELAY_MS)
     }
 
-    function onKeyDown(e: KeyboardEvent) {
-      if (isTypingTarget(e.target)) return
-
-      const ctrl = e.ctrlKey || e.metaKey
-
-      // Ctrl+Z — Undo
-      if (ctrl && e.key === "z" && !e.shiftKey) {
-        e.preventDefault()
-        undo()
-        return
-      }
-
-      // Ctrl+Y — Redo
-      if (ctrl && e.key === "y") {
-        e.preventDefault()
-        redo()
-        return
-      }
-
-      // Ctrl+C — Copy
-      if (ctrl && e.key === "c") {
-        e.preventDefault()
-        copyClip()
-        return
-      }
-
-      // Ctrl+V — Paste
-      if (ctrl && e.key === "v") {
-        e.preventDefault()
-        pasteClip()
-        return
-      }
-
-      // Ctrl+X — Cut (copy then delete)
-      if (ctrl && e.key === "x") {
+    const shortcuts: Record<string, (e: KeyboardEvent) => void> = {
+      'ctrl+z': (e) => { e.preventDefault(); undo() },
+      'ctrl+y': (e) => { e.preventDefault(); redo() },
+      'ctrl+c': (e) => { e.preventDefault(); copyClip() },
+      'ctrl+v': (e) => { e.preventDefault(); pasteClip() },
+      'ctrl+x': (e) => {
         e.preventDefault()
         const { selectedClipId } = storeRef.current()
         if (!selectedClipId) return
         copyClip()
         removeClip(selectedClipId)
-        return
-      }
-
-      // Space — Play / Pause
-      if (e.key === " " && !ctrl) {
+      },
+      ' ': (e) => {
         e.preventDefault()
         const { isPlaying } = storeRef.current()
         if (isPlaying) pause()
         else play()
-        return
-      }
-
-      // Shift+I — Open file picker
-      if (e.shiftKey && e.key === "I") {
-        e.preventDefault()
-        triggerFileInputRef.current?.()
-        return
-      }
-
-      // Shift+S — Split clip at playhead
-      if (e.shiftKey && e.key === "S") {
+      },
+      'shift+I': (e) => { e.preventDefault(); triggerFileInputRef.current?.() },
+      'shift+S': (e) => {
         e.preventDefault()
         const { selectedClipId, playhead } = storeRef.current()
         if (!selectedClipId) return
         splitClip(selectedClipId, playhead)
-        return
-      }
-
-      // Shift+= (zoom in) — hold-to-zoom
-      if (e.shiftKey && (e.key === "=" || e.key === "+")) {
-        e.preventDefault()
-        if (!e.repeat) startZoomIn()
-        return
-      }
-
-      // Shift+- (zoom out) — hold-to-zoom
-      if (e.shiftKey && e.key === "-") {
-        e.preventDefault()
-        if (!e.repeat) startZoomOut()
-        return
-      }
-
-      // Delete / Backspace — Delete selected clip
-      if (e.key === "Delete" || e.key === "Backspace") {
+      },
+      'shift+=': (e) => { e.preventDefault(); if (!e.repeat) startZoomIn() },
+      'shift++': (e) => { e.preventDefault(); if (!e.repeat) startZoomIn() },
+      'shift+-': (e) => { e.preventDefault(); if (!e.repeat) startZoomOut() },
+      'Delete': (e) => {
         e.preventDefault()
         const { selectedClipId } = storeRef.current()
-        if (!selectedClipId) return
-        removeClip(selectedClipId)
-        return
-      }
-
-      // , — Seek back 1 frame (~33ms)
-      if (e.key === ",") {
+        if (selectedClipId) removeClip(selectedClipId)
+      },
+      'Backspace': (e) => {
+        e.preventDefault()
+        const { selectedClipId } = storeRef.current()
+        if (selectedClipId) removeClip(selectedClipId)
+      },
+      ',': (e) => {
         e.preventDefault()
         const { playhead } = storeRef.current()
-        seek(Math.max(0, playhead - 0.033))
-        return
-      }
-
-      // . — Seek forward 1 frame
-      if (e.key === ".") {
+        seek(Math.max(0, playhead - FRAME_STEP_SECONDS))
+      },
+      '.': (e) => {
         e.preventDefault()
         const { playhead } = storeRef.current()
-        seek(playhead + 0.033)
-        return
-      }
+        seek(playhead + FRAME_STEP_SECONDS)
+      },
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return
+      shortcuts[getShortcutKey(e)]?.(e)
     }
 
     function onKeyUp(e: KeyboardEvent) {
       if (e.shiftKey === false) {
-        // Shift was released — always clear zoom intervals
         clearZoomIn()
         clearZoomOut()
         return
