@@ -44,9 +44,7 @@ export function recoverRequest(payload: RecoverRequestPayload) {
 }
 
 export function validateRecoverToken(token: string) {
-  return http<void>(`/auth/recover/validate?token=${token}`, {
-    parse: false
-  })
+  return http<{ valid: boolean }>(`/auth/recover/validate?token=${token}`)
 }
 
 export function recoverReset(payload: RecoverResetPayload) {
