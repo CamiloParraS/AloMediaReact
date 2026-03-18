@@ -14,12 +14,16 @@ export interface RegisterPayload {
 
 export interface AuthResponse {
   token: string
-  user: User
+  id: number
+  firstName: string
+  lastName: string
+  email: string
+  role: 'USER' | 'ADMIN'
 }
 
 export interface MeResponse {
   authenticated: boolean
-  user: User
+  user: User | null
 }
 
 export interface RecoverRequestPayload {
