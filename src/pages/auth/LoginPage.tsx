@@ -21,8 +21,8 @@ export default function LoginPage() {
     setError(null);
     setIsPending(true);
     try {
-      const { user } = await signIn({ email, password });
-      login(user);
+      const res = await signIn({ email, password });
+      login({ id: res.id, firstName: res.firstName, lastName: res.lastName, email: res.email, role: res.role });
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
