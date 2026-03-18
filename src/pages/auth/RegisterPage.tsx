@@ -30,8 +30,8 @@ export default function RegisterPage() {
     setError(null);
     setIsPending(true);
     try {
-      const { user } = await signUp({ firstName, lastName, email, password });
-      login(user);
+      const res = await signUp({ firstName, lastName, email, password });
+      login({ id: res.id, firstName: res.firstName, lastName: res.lastName, email: res.email, role: res.role });
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
