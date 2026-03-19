@@ -143,11 +143,9 @@ function ToolbarBtn({
 }) {
   const [hovered, setHovered] = useState(false)
 
-  const bg = snapOn
-    ? "var(--color-blood-red)"
-    : active || hovered
-      ? "var(--color-dark-elevated)"
-      : "transparent"
+  const bg = active || hovered 
+    ? "var(--color-dark-elevated)" 
+    : "transparent";
 
   const iconColor = disabled
     ? "var(--color-dark-border-light)"
