@@ -90,49 +90,70 @@ export default function VideoEditor() {
         {/* Project title */}
         <div
           className="flex items-center"
-          style={{ padding: "0 12px", height: "100%", borderRight: "1px solid var(--color-dark-border)" }}
+          style={{ padding: "0 12px", height: "100%", borderRight: "1px solid var(--color-dark-border)", width: 184 }}
         >
-          {isEditingTitle ? (
-            <input
-              autoFocus
-              value={titleDraft}
-              onChange={e => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur() }}
-              style={{
-                background: "transparent",
-                fontSize: 13,
-                fontWeight: 500,
-                color: "var(--color-accent-white)",
-                border: "none",
-                borderBottom: "1px solid var(--color-accent-red)",
-                outline: "none",
-                width: 192,
-                cursor: "text",
-                fontFamily: "inherit",
-              }}
-            />
-          ) : (
-            <button
-              onDoubleClick={() => { setTitleDraft(project.name); setIsEditingTitle(true) }}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: 13,
-                fontWeight: 500,
-                color: "var(--color-accent-white)",
-                cursor: "text",
-                maxWidth: 192,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontFamily: "inherit",
-              }}
-              title="Double-click to rename"
-            >
-              {project.name}
-            </button>
-          )}
+          <div className="relative w-full flex items-center" style={{ height: 24 }}>
+            {isEditingTitle ? (
+              <input
+                autoFocus
+                value={titleDraft}
+                onChange={e => setTitleDraft(e.target.value)}
+                onBlur={commitTitle}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur() }}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "var(--color-dark-elevated)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--color-accent-white)",
+                  border: "1px solid var(--color-accent-red)",
+                  borderRadius: 4,
+                  outline: "none",
+                  padding: "0 8px",
+                  width: "100%",
+                  height: "100%",
+                  fontFamily: "inherit",
+                  lineHeight: "normal",
+                  boxSizing: "border-box",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              />
+            ) : (
+              <button
+                onDoubleClick={() => { setTitleDraft(project.name); setIsEditingTitle(true) }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#18181f"; e.currentTarget.style.borderColor = "var(--color-dark-border)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
+                  style={{
+                  background: "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: 4,
+                  padding: "0 8px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--color-accent-white)",
+                  cursor: "text",
+                  width: "100%",
+                  height: "100%",
+                  textAlign: "left",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontFamily: "inherit",
+                  lineHeight: "normal",
+                  display: "flex",
+                  alignItems: "center",
+                  boxSizing: "border-box",
+                  transition: "background 150ms, border-color 150ms",
+                }}
+                title="Double-click to rename"
+              >
+                {project.name}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex-1" />
