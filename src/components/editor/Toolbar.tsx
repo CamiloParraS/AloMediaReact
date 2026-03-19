@@ -142,18 +142,23 @@ function ToolbarBtn({
   disabled?: boolean
 }) {
   const [hovered, setHovered] = useState(false)
-
-  const bg = active || hovered 
-    ? "var(--color-dark-elevated)" 
-    : "transparent";
+  const [pressed, setPressed] = useState(false)
+  
+  const bg = pressed
+    ? "var(--color-dark-border)"
+    : active || hovered
+      ? "var(--color-dark-elevated)"
+      : "transparent"
 
   const iconColor = disabled
     ? "var(--color-dark-border-light)"
-    : snapOn || active
-      ? "var(--color-accent-red)"
-      : hovered
-        ? "var(--color-accent-white)"
-        : "var(--color-muted-light)"
+    : pressed
+      ? "var(--color-blood-red-light)"  // <---- Or Whatever dude
+      : snapOn || active
+        ? "var(--color-accent-red)"
+        : hovered
+          ? "var(--color-accent-white)"
+          : "var(--color-muted-light)"
 
   return (
     <button
@@ -164,10 +169,11 @@ function ToolbarBtn({
       onClick={onClick}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
-      onPointerLeave={() => { setHovered(false); onPointerLeave?.() }}
       onPointerCancel={onPointerCancel}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); onPointerLeave?.() }}
       style={{
         display: "flex",
         alignItems: "center",
@@ -201,6 +207,7 @@ function TrackBtn({
   onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
+  const [pressed, setPressed] = useState(false)
 
   return (
     <button
@@ -208,7 +215,9 @@ function TrackBtn({
       title={label}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => { setHovered(false); setPressed(false) }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -217,8 +226,8 @@ function TrackBtn({
         padding: "0 8px",
         borderRadius: 0,
         border: "none",
-        background: hovered ? "var(--color-dark-elevated)" : "transparent",
-        color: hovered ? "var(--color-accent-white)" : "var(--color-muted-light)",
+        background: pressed ? "var(--color-dark-border)" : hovered ? "var(--color-dark-elevated)" : "transparent",
+        color: pressed ? "var(--color-blood-red-light)" : hovered ? "var(--color-accent-white)" : "var(--color-muted-light)",
         cursor: "pointer",
         flexShrink: 0,
         transition: "background-color 150ms, color 150ms",
