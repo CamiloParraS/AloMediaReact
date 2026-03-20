@@ -11,6 +11,7 @@ import { DEFAULT_COLOR_ADJUSTMENTS } from "../../constants/colorAdjustments"
 import { setupCanvasScaling } from "../../player/render/canvasScaling"
 import { TransformOverlay } from "./TransformOverlay"
 import { RangeSlider } from "../ui/RangeSlider"
+import { IconButton } from "../ui/IconButton"
 import { getActiveVideoClip } from "../../player/timeline/activeClipResolver"
 import { DEFAULT_SPEED } from "../../constants/speed"
 
@@ -26,49 +27,6 @@ function formatTimecode(seconds: number): string {
     String(s).padStart(2, "0"),
     String(f).padStart(2, "0"),
   ].join(":")
-}
-
-function TransportBtn({
-  icon,
-  label,
-  onClick,
-  primary = false,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-  primary?: boolean
-}) {
-  const [hovered, setHovered] = useState(false)
-
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: primary ? 32 : 28,
-        height: primary ? 32 : 28,
-        flexShrink: 0,
-        borderRadius: 0,
-        border: "none",
-        background: primary || hovered ? "var(--color-dark-elevated)" : "transparent",
-        color: "var(--color-muted-light)",
-        cursor: "pointer",
-        transition: "background-color 150ms",
-      }}
-    >
-      <span style={{ display: "flex", alignItems: "center", width: primary ? 16 : 14, height: primary ? 16 : 14 }}>
-        {icon}
-      </span>
-    </button>
-  )
 }
 
 export function PreviewPlayer() {
@@ -275,16 +233,19 @@ export function PreviewPlayer() {
         }}
       >
         {/* Transport buttons */}
-        <TransportBtn icon={<SkipBack size={14} />} label="Skip to start" onClick={() => seek(0)} />
-        <TransportBtn icon={<Rewind size={14} />} label="Rewind 5s" onClick={() => seek(Math.max(0, playhead - 5))} />
-        <TransportBtn
+        {/* Changed to IconButtons */}
+        <IconButton icon={<SkipBack size={14} />} label="Skip to start" size="sm" square onClick={() => seek(0)} />
+        <IconButton icon={<Rewind size={14} />} label="Rewind 5s" size="sm" square onClick={() => seek(Math.max(0, playhead - 5))} />
+        <IconButton
           icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
           label={isPlaying ? "Pause" : "Play"}
+          size="md"
+          square
+          className="bg-dark-elevated"
           onClick={() => (isPlaying ? pause() : play())}
-          primary
         />
-        <TransportBtn icon={<FastForward size={14} />} label="Forward 5s" onClick={() => seek(Math.min(duration, playhead + 5))} />
-        <TransportBtn icon={<SkipForward size={14} />} label="Skip to end" onClick={() => seek(duration)} />
+        <IconButton icon={<FastForward size={14} />} label="Forward 5s" size="sm" square onClick={() => seek(Math.min(duration, playhead + 5))} />
+        <IconButton icon={<SkipForward size={14} />} label="Skip to end" size="sm" square onClick={() => seek(duration)} />
 
         {/* Timecode */}
         <div
@@ -317,9 +278,11 @@ export function PreviewPlayer() {
         </div>
 
         {/* Volume */}
-        <TransportBtn
+        <IconButton
           icon={isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
           label={isMuted ? "Unmute" : "Mute"}
+          size="sm"
+          square
           onClick={() => setIsMuted(v => !v)}
         />
         <div style={{ width: 72, padding: "0 4px" }}>
