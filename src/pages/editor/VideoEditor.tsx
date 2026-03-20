@@ -6,6 +6,7 @@ import { Toolbar } from "../../components/editor/Toolbar"
 import { PreviewPlayer } from "../../components/editor/PreviewPlayer"
 import { InspectorPanel } from "../../components/editor/InspectorPanel"
 import { ExportModal } from "../../components/editor/ExportModal"
+import { LabelButton } from "../../components/ui/LabelButton"
 import { useEditorStore } from "../../store/editorStore"
 import { exportProjectJSON, loadProject } from "../../project/projectSerializer"
 import { useExport } from "../../hooks/useExport"
@@ -160,106 +161,34 @@ export default function VideoEditor() {
 
         {/* Action buttons */}
         <div className="flex items-center" style={{ gap: 4, padding: "0 8px" }}>
-          <button
+          <LabelButton
+            icon={<FolderOpen size={12} />}
+            label="Load"
+            variant="secondary"
+            size="sm"
             onClick={() => loadInputRef.current?.click()}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              height: 28,
-              padding: "0 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              borderRadius: 8,
-              border: "1px solid var(--color-dark-border)",
-              background: "var(--color-dark-elevated)",
-              color: "var(--color-accent-white)",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-dark-border)" }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-dark-elevated)" }}
-          >
-            <FolderOpen size={12} />
-            Load
-          </button>
-
-          <button
+          />
+          <LabelButton
+            icon={<Save size={12} />}
+            label="Save"
+            variant="secondary"
+            size="sm"
             onClick={() => exportProjectJSON(project)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              height: 28,
-              padding: "0 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              borderRadius: 8,
-              border: "1px solid var(--color-dark-border)",
-              background: "var(--color-dark-elevated)",
-              color: "var(--color-accent-white)",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-dark-border)" }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-dark-elevated)" }}
-          >
-            <Save size={12} />
-            Save
-          </button>
-
-          <button
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              height: 28,
-              padding: "0 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              borderRadius: 8,
-              border: "1px solid var(--color-dark-border)",
-              background: "var(--color-dark-elevated)",
-              color: "var(--color-accent-white)",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-dark-border)" }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-dark-elevated)" }}
-          >
-            <Share2 size={12} />
-            Share
-          </button>
-
-          <button
-            onClick={() => setShowExportModal(true)}
+          />
+          <LabelButton
+            icon={<Share2 size={12} />}
+            label="Share"
+            variant="secondary"
+            size="sm"
+          />
+          <LabelButton
+            icon={<Film size={12} />}
+            label="Export"
+            variant="accent"
+            size="sm"
             disabled={isExporting}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              height: 28,
-              padding: "0 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              borderRadius: 8,
-              border: "1px solid var(--color-blood-red-light)",
-              background: "var(--color-accent-red)",
-              color: "#ffffff",
-              cursor: isExporting ? "not-allowed" : "pointer",
-              opacity: isExporting ? 0.6 : 1,
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={e => { if (!isExporting) (e.currentTarget as HTMLButtonElement).style.background = "var(--color-blood-red-light)" }}
-            onMouseLeave={e => { if (!isExporting) (e.currentTarget as HTMLButtonElement).style.background = "var(--color-accent-red)" }}
-          >
-            <Film size={12} />
-            Export
-          </button>
+            onClick={() => setShowExportModal(true)}
+          />
         </div>
       </header>
 
