@@ -5,7 +5,7 @@ export const MIN_PIXELS_PER_SECOND = 0.5
 export const MAX_PIXELS_PER_SECOND = 200
 
 // Default scale: minute-oriented timeline reading.
-export const DEFAULT_PIXELS_PER_SECOND = 50
+export const DEFAULT_PIXELS_PER_SECOND = 20
 
 // Multiplicative zoom step for wheel interactions.
 export const ZOOM_STEP = 1.2
