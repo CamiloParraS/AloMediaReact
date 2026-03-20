@@ -4,6 +4,7 @@ import type { MediaType, Track, TrackType } from "../../project/projectTypes"
 import { ClipComponent } from "./Clip"
 import { useEditorStore } from "../../store/editorStore"
 import { pxToTime, timeToPx, TRACK_HEADER_WIDTH } from "../../utils/time"
+import { IconButton } from "../ui/IconButton"
 
 interface TrackProps {
   track: Track
@@ -15,59 +16,6 @@ interface TrackProps {
 }
 
 const TYPE_LABEL: Record<string, string> = { video: "Video", audio: "Audio" }
-
-function TrackControlBtn({
-  icon,
-  label,
-  onClick,
-  active = false,
-  danger = false,
-  hidden = false,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: (e: React.MouseEvent) => void
-  active?: boolean
-  danger?: boolean
-  hidden?: boolean
-}) {
-  const [hovered, setHovered] = useState(false)
-
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        width: 20,
-        height: 20,
-        borderRadius: 0,
-        border: "none",
-        background: "transparent",
-        color: danger && hovered
-          ? "#f87171"
-          : active
-            ? "var(--color-accent-red)"
-            : "var(--color-muted)",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        opacity: hidden ? 0 : 1,
-        transition: "opacity 150ms, color 150ms",
-        padding: 0,
-      }}
-    >
-      <span style={{ display: "flex", alignItems: "center", width: 11, height: 11 }}>
-        {icon}
-      </span>
-    </button>
-  )
-}
 
 export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDrop, onClipDrop, resolveDropPosition }: TrackProps) {
   const selectedClipId = useEditorStore(s => s.selectedClipId)
@@ -234,24 +182,30 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
 
         {/* Track action buttons */}
         <div style={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
-          <TrackControlBtn
+          <IconButton
             icon={isVisible ? <Eye size={11} /> : <EyeOff size={11} />}
             label={isVisible ? "Hide track" : "Show track"}
+            size="xs"
+            square
             active={!isVisible}
             onClick={() => setIsVisible(v => !v)}
           />
-          <TrackControlBtn
+          <IconButton
             icon={isLocked ? <Lock size={11} /> : <Unlock size={11} />}
             label={isLocked ? "Unlock track" : "Lock track"}
+            size="xs"
+            square
             active={isLocked}
             onClick={() => setIsLocked(v => !v)}
           />
           {canRemove && (
-            <TrackControlBtn
+            <IconButton
               icon={<Trash2 size={11} />}
               label="Delete track"
-              danger
-              hidden={!headerHovered}
+              size="xs"
+              square
+              variant="danger"
+              className={headerHovered ? "opacity-100" : "opacity-0 pointer-events-none"}
               onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
             />
           )}
