@@ -83,7 +83,7 @@ export default function VideoEditor() {
               color: "var(--color-accent-red)",
             }}
           >
-            ALO
+            BOLAS
           </span>
         </div>
 
