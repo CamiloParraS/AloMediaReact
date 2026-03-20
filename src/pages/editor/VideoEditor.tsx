@@ -10,6 +10,7 @@ import { useEditorStore } from "../../store/editorStore"
 import { exportProjectJSON, loadProject } from "../../project/projectSerializer"
 import { useExport } from "../../hooks/useExport"
 import { useEditorKeyboardShortcuts } from "../../hooks/useEditorKeyboardShortcuts"
+import logoUrl from "/JustPearto.svg?url"
 
 export default function VideoEditor() {
   const project = useEditorStore(s => s.project)
@@ -75,16 +76,7 @@ export default function VideoEditor() {
             height: "100%",
           }}
         >
-          <span
-            style={{
-              fontWeight: 700,
-              fontSize: 13,
-              letterSpacing: "0.15em",
-              color: "var(--color-accent-red)",
-            }}
-          >
-            BOLAS
-          </span>
+          <img src={logoUrl} width={36} height={16} alt="ALO media LOGO" />
         </div>
 
         {/* Project title */}
