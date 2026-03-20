@@ -234,18 +234,17 @@ export function PreviewPlayer() {
       >
         {/* Transport buttons */}
         {/* Changed to IconButtons */}
-        <IconButton icon={<SkipBack size={14} />} label="Skip to start" size="sm" square onClick={() => seek(0)} />
-        <IconButton icon={<Rewind size={14} />} label="Rewind 5s" size="sm" square onClick={() => seek(Math.max(0, playhead - 5))} />
+        <IconButton icon={<SkipBack size={14} />} label="Skip to start" size="sm" onClick={() => seek(0)} />
+        <IconButton icon={<Rewind size={14} />} label="Rewind 5s" size="sm" onClick={() => seek(Math.max(0, playhead - 5))} />
         <IconButton
           icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
           label={isPlaying ? "Pause" : "Play"}
           size="md"
-          square
           className="bg-dark-elevated"
           onClick={() => (isPlaying ? pause() : play())}
         />
-        <IconButton icon={<FastForward size={14} />} label="Forward 5s" size="sm" square onClick={() => seek(Math.min(duration, playhead + 5))} />
-        <IconButton icon={<SkipForward size={14} />} label="Skip to end" size="sm" square onClick={() => seek(duration)} />
+        <IconButton icon={<FastForward size={14} />} label="Forward 5s" size="sm" onClick={() => seek(Math.min(duration, playhead + 5))} />
+        <IconButton icon={<SkipForward size={14} />} label="Skip to end" size="sm" onClick={() => seek(duration)} />
 
         {/* Timecode */}
         <div
@@ -282,7 +281,6 @@ export function PreviewPlayer() {
           icon={isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
           label={isMuted ? "Unmute" : "Mute"}
           size="sm"
-          square
           onClick={() => setIsMuted(v => !v)}
         />
         <div style={{ width: 72, padding: "0 4px" }}>

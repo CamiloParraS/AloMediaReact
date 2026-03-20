@@ -217,7 +217,6 @@ export function Toolbar() {
           icon={<Scissors size={14} />}
           label="Cut at playhead"
           size="sm"
-          square
           disabled={!selectedClipId}
           onClick={() => { if (selectedClipId) splitClip(selectedClipId, playhead) }}
         />
@@ -225,22 +224,20 @@ export function Toolbar() {
           icon={<Copy size={14} />}
           label="Copy"
           size="sm"
-          square
           onClick={copyClip}
         />
         <IconButton
           icon={<Clipboard size={14} />}
           label="Paste"
           size="sm"
-          square
           onClick={pasteClip}
         />
 
         <GroupDivider />
 
         {/* History group */}
-        <IconButton icon={<Undo2 size={14} />} label="Undo" size="sm" square onClick={undo} />
-        <IconButton icon={<Redo2 size={14} />} label="Redo" size="sm" square onClick={redo} />
+        <IconButton icon={<Undo2 size={14} />} label="Undo" size="sm" onClick={undo} />
+        <IconButton icon={<Redo2 size={14} />} label="Redo" size="sm" onClick={redo} />
 
         <GroupDivider />
 
@@ -249,7 +246,6 @@ export function Toolbar() {
           icon={<ZoomOut size={14} />}
           label="Zoom out"
           size="sm"
-          square
           onPointerDown={startZoomOut}
           onPointerUp={clearZoomOut}
           onPointerLeave={clearZoomOut}
@@ -271,7 +267,6 @@ export function Toolbar() {
           icon={<ZoomIn size={14} />}
           label="Zoom in"
           size="sm"
-          square
           onPointerDown={startZoomIn}
           onPointerUp={clearZoomIn}
           onPointerLeave={clearZoomIn}
@@ -281,7 +276,6 @@ export function Toolbar() {
           icon={<Maximize2 size={14} />}
           label="Fit to screen"
           size="sm"
-          square
           onClick={() => seek(0)}
         />
 
@@ -292,7 +286,6 @@ export function Toolbar() {
           icon={<Magnet size={14} />}
           label={snapEnabled ? "Disable snap" : "Enable snap"}
           size="sm"
-          square
           accent={snapEnabled}
           onClick={() => setSnapEnabled(v => !v)}
         />
@@ -322,7 +315,6 @@ export function Toolbar() {
           icon={<HelpCircle size={14} />}
           label="Keyboard shortcuts"
           size="sm"
-          square
           onClick={() => setShowShortcuts(true)}
         />
       </div>

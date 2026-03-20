@@ -186,7 +186,6 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
             icon={isVisible ? <Eye size={11} /> : <EyeOff size={11} />}
             label={isVisible ? "Hide track" : "Show track"}
             size="xs"
-            square
             active={!isVisible}
             onClick={() => setIsVisible(v => !v)}
           />
@@ -194,7 +193,6 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
             icon={isLocked ? <Lock size={11} /> : <Unlock size={11} />}
             label={isLocked ? "Unlock track" : "Lock track"}
             size="xs"
-            square
             active={isLocked}
             onClick={() => setIsLocked(v => !v)}
           />
@@ -203,7 +201,6 @@ export function TrackComponent({ track, dragOverTrackId, setDragOverTrack, onDro
               icon={<Trash2 size={11} />}
               label="Delete track"
               size="xs"
-              square
               variant="danger"
               className={headerHovered ? "opacity-100" : "opacity-0 pointer-events-none"}
               onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
