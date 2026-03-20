@@ -21,6 +21,8 @@ import {
   MIN_PIXELS_PER_SECOND,
   MAX_PIXELS_PER_SECOND,
 } from "../../constants/timeline"
+import { IconButton } from "../ui/IconButton"
+import { LabelButton } from "../ui/LabelButton"
 
 const SHORTCUTS = [
   { keys: "Ctrl+Z",          action: "Undo" },
@@ -77,14 +79,12 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
           >
             Keyboard Shortcuts
           </h2>
-          <button
+          <IconButton
+            icon={<X size={14} />}
+            label="Close"
+            size="sm"
             onClick={onClose}
-            style={{ background: "transparent", border: "none", color: "var(--color-muted)", cursor: "pointer", display: "flex", alignItems: "center" }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-accent-white)" }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-muted)" }}
-          >
-            <X size={14} />
-          </button>
+          />
         </div>
         <div className="grid grid-cols-2" style={{ gap: "0 24px" }}>
           {[left, right].map((col, ci) => (
@@ -117,135 +117,6 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// Reusable toolbar button
-function ToolbarBtn({
-  icon,
-  label,
-  onClick,
-  onPointerDown,
-  onPointerUp,
-  onPointerLeave,
-  onPointerCancel,
-  active = false,
-  snapOn = false,
-  disabled = false,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick?: () => void
-  onPointerDown?: () => void
-  onPointerUp?: () => void
-  onPointerLeave?: () => void
-  onPointerCancel?: () => void
-  active?: boolean
-  snapOn?: boolean
-  disabled?: boolean
-}) {
-  const [hovered, setHovered] = useState(false)
-  const [pressed, setPressed] = useState(false)
-  
-  const bg = pressed
-    ? "var(--color-dark-border)"
-    : active || hovered
-      ? "var(--color-dark-elevated)"
-      : "transparent"
-
-  const iconColor = disabled
-    ? "var(--color-dark-border-light)"
-    : pressed
-      ? "var(--color-blood-red-light)"  // <---- Or Whatever dude
-      : snapOn || active
-        ? "var(--color-accent-red)"
-        : hovered
-          ? "var(--color-accent-white)"
-          : "var(--color-muted-light)"
-
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onMouseEnter={() => setHovered(true)}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      onMouseLeave={() => { setHovered(false); setPressed(false); onPointerLeave?.() }}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 28,
-        height: 28,
-        borderRadius: 0,
-        border: "none",
-        background: bg,
-        color: iconColor,
-        cursor: disabled ? "not-allowed" : "pointer",
-        flexShrink: 0,
-        transition: "background-color 150ms, color 150ms",
-      }}
-    >
-      <span style={{ display: "flex", alignItems: "center", width: 14, height: 14 }}>
-        {icon}
-      </span>
-    </button>
-  )
-}
-
-// Track add button with label
-function TrackBtn({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-}) {
-  const [hovered, setHovered] = useState(false)
-  const [pressed, setPressed] = useState(false)
-
-  return (
-    <button
-      type="button"
-      title={label}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setPressed(false) }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        height: 28,
-        padding: "0 8px",
-        borderRadius: 0,
-        border: "none",
-        background: pressed ? "var(--color-dark-border)" : hovered ? "var(--color-dark-elevated)" : "transparent",
-        color: pressed ? "var(--color-blood-red-light)" : hovered ? "var(--color-accent-white)" : "var(--color-muted-light)",
-        cursor: "pointer",
-        flexShrink: 0,
-        transition: "background-color 150ms, color 150ms",
-        fontFamily: "inherit",
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: "0.04em",
-      }}
-    >
-      <span style={{ display: "flex", alignItems: "center", width: 14, height: 14 }}>
-        {icon}
-      </span>
-      {label}
-    </button>
-  )
-}
-
-// Vertical divider between groups
 function GroupDivider() {
   return (
     <div
@@ -342,33 +213,48 @@ export function Toolbar() {
         }}
       >
         {/* Edit group */}
-        <ToolbarBtn
+        <IconButton
           icon={<Scissors size={14} />}
           label="Cut at playhead"
+          size="sm"
+          square
           disabled={!selectedClipId}
           onClick={() => { if (selectedClipId) splitClip(selectedClipId, playhead) }}
         />
-        <ToolbarBtn icon={<Copy size={14} />} label="Copy" onClick={copyClip} />
-        <ToolbarBtn icon={<Clipboard size={14} />} label="Paste" onClick={pasteClip} />
+        <IconButton
+          icon={<Copy size={14} />}
+          label="Copy"
+          size="sm"
+          square
+          onClick={copyClip}
+        />
+        <IconButton
+          icon={<Clipboard size={14} />}
+          label="Paste"
+          size="sm"
+          square
+          onClick={pasteClip}
+        />
 
         <GroupDivider />
 
         {/* History group */}
-        <ToolbarBtn icon={<Undo2 size={14} />} label="Undo" onClick={undo} />
-        <ToolbarBtn icon={<Redo2 size={14} />} label="Redo" onClick={redo} />
+        <IconButton icon={<Undo2 size={14} />} label="Undo" size="sm" square onClick={undo} />
+        <IconButton icon={<Redo2 size={14} />} label="Redo" size="sm" square onClick={redo} />
 
         <GroupDivider />
 
         {/* Zoom group */}
-        <ToolbarBtn
+        <IconButton
           icon={<ZoomOut size={14} />}
           label="Zoom out"
+          size="sm"
+          square
           onPointerDown={startZoomOut}
           onPointerUp={clearZoomOut}
           onPointerLeave={clearZoomOut}
           onPointerCancel={clearZoomOut}
         />
-        {/* Zoom percentage display */}
         <div
           style={{
             width: 44,
@@ -381,50 +267,62 @@ export function Toolbar() {
         >
           {zoomPercent}%
         </div>
-        <ToolbarBtn
+        <IconButton
           icon={<ZoomIn size={14} />}
           label="Zoom in"
+          size="sm"
+          square
           onPointerDown={startZoomIn}
           onPointerUp={clearZoomIn}
           onPointerLeave={clearZoomIn}
           onPointerCancel={clearZoomIn}
         />
-        <ToolbarBtn
+        <IconButton
           icon={<Maximize2 size={14} />}
           label="Fit to screen"
+          size="sm"
+          square
           onClick={() => seek(0)}
         />
 
         <GroupDivider />
 
         {/* Snap toggle */}
-        <ToolbarBtn
+        <IconButton
           icon={<Magnet size={14} />}
           label={snapEnabled ? "Disable snap" : "Enable snap"}
-          snapOn={snapEnabled}
+          size="sm"
+          square
+          accent={snapEnabled}
           onClick={() => setSnapEnabled(v => !v)}
         />
 
         <GroupDivider />
 
         {/* Track buttons */}
-        <TrackBtn
+        <LabelButton
           icon={<Film size={14} />}
           label="+ Video Track"
+          variant="ghost"
+          size="sm"
           onClick={() => addTrack("video")}
         />
-        <TrackBtn
+        <LabelButton
           icon={<Music size={14} />}
           label="+ Audio Track"
+          variant="ghost"
+          size="sm"
           onClick={() => addTrack("audio")}
         />
 
         <div style={{ flex: 1 }} />
 
         {/* Help */}
-        <ToolbarBtn
+        <IconButton
           icon={<HelpCircle size={14} />}
           label="Keyboard shortcuts"
+          size="sm"
+          square
           onClick={() => setShowShortcuts(true)}
         />
       </div>
